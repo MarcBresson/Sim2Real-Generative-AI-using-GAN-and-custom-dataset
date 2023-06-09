@@ -1,0 +1,27 @@
+# Data
+/data/
+/models/
+
+# Byte-compiled
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+*.egg
+
+# Sphinx documentationgit 
+doc/_build/
+doc/build/
+doc/source/generated
+
+# Jupyter Notebook
+.ipynb_checkpoints
+.install_jupyter
+*.ipynb
+
+# Miss
+.idea
