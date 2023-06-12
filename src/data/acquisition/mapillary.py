@@ -1,7 +1,7 @@
 from pathlib import Path
-import time
 import threading
 
+from tqdm import tqdm
 import requests
 import pandas
 import mercantile
@@ -68,7 +68,7 @@ def inside_bbox(lon_lat, west_south_east_north) -> bool:
     can expand beyond"""
     lon, lat = lon_lat
     west, south, east, north = west_south_east_north
-    return lon > west and lon < east and lat > south and lat < north
+    return west < lon < east and south < lat < north
 
 
 def main(access_token, data_dir: Path, dataset: list):
@@ -79,7 +79,15 @@ def main(access_token, data_dir: Path, dataset: list):
     annotations_file = data_dir / "annotations.arrow"
 
     try:
-        for tile in mercantile.tiles(west, south, east, north, 14):
+        total_tiles = sum(1 for _ in mercantile.tiles(west, south, east, north, 14))
+
+        tiles_bar = tqdm(
+            mercantile.tiles(west, south, east, north, 14),
+            total=total_tiles
+        )
+        for tile in tiles_bar:
+            tiles_bar.set_postfix(tile_z=tile.z, tile_x=tile.x, tile_y=tile.y)
+
             tile_url = f'https://tiles.mapillary.com/maps/vtp/mly1_public/2/{tile.z}/{tile.x}/{tile.y}?access_token={access_token}'
             response = requests.get(tile_url, headers=headers)
             tile_data = vt_bytes_to_geojson(response.content, tile.x, tile.y, tile.z, layer="image")
@@ -93,7 +101,6 @@ def main(access_token, data_dir: Path, dataset: list):
                         target=download_image_data,
                         args=(dataset, feature['properties']['id'], fields, headers, image_dir)
                     ).start()
-                    time.sleep(0.1)
     finally:
         dataset_pd = pandas.DataFrame(dataset, columns=["image_id", "camera_type", "capture_at", "computed_altitude", "computed_compass_angle", "lon", "lat", "rot x", "rot y", "rot z"])
 
