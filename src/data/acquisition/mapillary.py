@@ -1,8 +1,8 @@
-import threading
-import requests
 from pathlib import Path
 import time
+import threading
 
+import requests
 import pandas
 import mercantile
 from vt2geojson.tools import vt_bytes_to_geojson
