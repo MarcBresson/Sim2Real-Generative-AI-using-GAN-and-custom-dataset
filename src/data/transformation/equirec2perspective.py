@@ -25,7 +25,10 @@ class Equirec:
             raise ValueError(f"img_batch should be of dimension 4. Found {len(img_batch.shape)}."
                              "in case of single image, you can use `img.unsqueeze(0)`.")
         self.device = device
+
         self.img_batch = img_batch.to(device)
+        self.batch_size = img_batch.shape[0]
+
         self._width = img_batch.shape[2]
         self._height = img_batch.shape[1]
 
@@ -49,7 +52,7 @@ class Equirec:
         lon, lat = self.compute_maps(yaw, pitch, w_fov, h_fov)
 
         grid = torch.stack((lon / 1024 - 1, lat / 512 - 1), dim=2)
-        grid = grid.unsqueeze(0)  # we use the same grid for the whole batch
+        grid = grid.unsqueeze(0).repeat((self.batch_size, 1, 1, 1))  # we use the same grid for the whole batch
 
         persp = torch.nn.functional.grid_sample(self.img_batch, grid)
 
