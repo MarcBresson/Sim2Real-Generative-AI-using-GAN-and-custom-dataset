@@ -25,8 +25,7 @@ class Equirec:
             raise ValueError(f"img_batch should be of dimension 4. Found {len(img_batch.shape)}."
                              "in case of single image, you can use `img.unsqueeze(0)`.")
         self.device = device
-        img_batch = img_batch.to(device)
-        self.img_batch = img_batch / 255
+        self.img_batch = img_batch.to(device)
         self._width = img_batch.shape[2]
         self._height = img_batch.shape[1]
 
