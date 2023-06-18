@@ -17,7 +17,7 @@ class Equirec:
                 - N is the number of image in the batch
                 - C is the number of channels in the images
                 - H is the height of the images
-                - W is the width
+                - W is the width of the images
         device : str, optional
             device to make the computation on, by default "cuda:0"
         """
@@ -54,7 +54,7 @@ class Equirec:
 
         persp = torch.nn.functional.grid_sample(self.img_batch, grid)
 
-        return persp, lon, lat
+        return persp
 
     def compute_maps(self, yaw: float, pitch: float, w_fov: int = 90, h_fov: int = 90) -> tuple[torch.Tensor, torch.Tensor]:
         """
