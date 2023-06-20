@@ -71,12 +71,19 @@ def inside_bbox(lon_lat, west_south_east_north) -> bool:
     return west < lon < east and south < lat < north
 
 
+def image_exists(image_id: int, dataset: pandas.DataFrame):
+    """return True if the image is in the dataset"""
+    return image_id in dataset["image_id"].values
+
+
 def main(access_token, data_dir: Path, dataset: list):
     fields = ["thumb_2048_url", "camera_type", "captured_at", "computed_altitude", "computed_compass_angle", "computed_geometry", "computed_rotation"]
     headers = {"Authorization": f"OAuth {access_token}"}
 
     image_dir = data_dir / "mapillary2"
     annotations_file = data_dir / "annotations.arrow"
+
+    dataset_pd = pandas.read_feather(annotations_file)
 
     try:
         total_tiles = sum(1 for _ in mercantile.tiles(west, south, east, north, 14))
@@ -96,12 +103,19 @@ def main(access_token, data_dir: Path, dataset: list):
                 lon = feature['geometry']['coordinates'][0]
                 lat = feature['geometry']['coordinates'][1]
 
+                image_id = feature['properties']['id']
+
+                if image_exists(image_id, dataset_pd):
+                    continue
+
                 if inside_bbox((lon, lat), (west, south, east, north)):
                     threading.Thread(
                         target=download_image_data,
                         args=(dataset, feature['properties']['id'], fields, headers, image_dir)
                     ).start()
     finally:
-        dataset_pd = pandas.DataFrame(dataset, columns=["image_id", "camera_type", "capture_at", "computed_altitude", "computed_compass_angle", "lon", "lat", "rot x", "rot y", "rot z"])
+        new_dataset_pd = pandas.DataFrame(dataset, columns=["image_id", "camera_type", "capture_at", "computed_altitude", "computed_compass_angle", "lon", "lat", "rot x", "rot y", "rot z"])
+
+        dataset_pd = pandas.concat([new_dataset_pd, dataset_pd], ignore_index=True)
 
         dataset_pd.to_feather(annotations_file)
