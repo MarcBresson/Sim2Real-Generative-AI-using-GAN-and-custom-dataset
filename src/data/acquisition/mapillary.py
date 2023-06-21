@@ -46,7 +46,7 @@ def download_image_data(
     response = requests.get(url, headers=headers)
     image_data = response.json()
 
-    if is_camera_360(image_data):
+    if is_camera_360(image_data) and "computed_compass_angle" in image_data:
         img_data = process_img_data(image_id, image_data)
         data_set.append(img_data)
 
