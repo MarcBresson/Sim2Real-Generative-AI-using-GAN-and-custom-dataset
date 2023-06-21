@@ -86,10 +86,10 @@ def main(access_token, data_dir: Path, dataset: list):
     dataset_pd = pandas.read_feather(annotations_file)
 
     try:
-        total_tiles = sum(1 for _ in mercantile.tiles(west, south, east, north, 14))
+        total_tiles = sum(1 for _ in mercantile.tiles(west, south, east, north, 18))
 
         tiles_bar = tqdm(
-            mercantile.tiles(west, south, east, north, 14),
+            mercantile.tiles(west, south, east, north, 18),
             total=total_tiles
         )
         for tile in tiles_bar:
