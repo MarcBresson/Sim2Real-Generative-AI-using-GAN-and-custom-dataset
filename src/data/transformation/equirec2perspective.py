@@ -85,9 +85,9 @@ class Equirec:
         width = int(self._width / 2 * w_len)
         height = int(self._width / 2 * h_len)
 
-        x_map = torch.ones([height, width]).to(self.device)
-        y_map = torch.tile(torch.linspace(-w_len, w_len, width), [height, 1]).to(self.device)
-        z_map = torch.tile(torch.linspace(h_len, -h_len, height), [width, 1]).transpose(0, 1).to(self.device)
+        x_map = torch.ones([height, width], device=self.device)
+        y_map = torch.tile(torch.linspace(-w_len, w_len, width, device=self.device), [height, 1])
+        z_map = torch.tile(torch.linspace(h_len, -h_len, height, device=self.device), [width, 1]).transpose(0, 1)
 
         distance: torch.Tensor = torch.sqrt(x_map**2 + y_map**2 + z_map**2)
         distance = distance.unsqueeze(2).repeat((1, 1, 3))
