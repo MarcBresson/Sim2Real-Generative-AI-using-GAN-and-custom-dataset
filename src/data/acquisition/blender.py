@@ -154,6 +154,8 @@ def move_render_passes(save_dirs: list[Path], output_dir: Path):
         pass_ext = pass_img_path.suffix
 
         new_filepath = output_dir.with_stem(f"{image_id}_{pass_name}").with_suffix(pass_ext)
+        new_filepath.unlink(missing_ok=True)
+
         pass_img_path.rename(new_filepath)
 
 
@@ -182,12 +184,7 @@ def main():
     scene = bpy.context.scene
     projection = TransverseMercator(lat=scene["lat"], lon=scene["lon"])
 
-    count = 0
     for streetview_data in read_data(dataset_path):
-        if count > 5:
-            break
-        count += 1
-
         image_id, lon, lat, alt, computed_compass_angle = streetview_data
 
         x, y = projection.from_geographic(lat, lon)
