@@ -162,7 +162,7 @@ def save_viewernode(save_dir: Path):
     viewer = viewer[0::4].reshape((1024, 2048))  # remove duplicated channels
     viewer = viewer[::-1, :]  # flip horizontally
     viewer = viewer * (viewer < 1.0e+10)  # remove the sky
-    viewer = viewer.astype(np.uint16)  # save as int (way lighter)
+    viewer = viewer.astype(np.float16)
     np.save(save_dir / "raw", viewer)
 
 
@@ -197,5 +197,6 @@ def main():
 
         save_viewernode(save_dirs[0])
         move_render_passes(save_dirs, savedir / str(image_id))
+
 
 main()
