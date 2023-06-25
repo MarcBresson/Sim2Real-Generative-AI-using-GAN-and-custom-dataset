@@ -9,7 +9,7 @@ from vt2geojson.tools import vt_bytes_to_geojson
 
 
 north =            48.9219
-west, east = 2.1976,     2.4699
+west, east = 2.3976,     2.4699
 south =            48.8072
 
 
@@ -73,6 +73,8 @@ def inside_bbox(lon_lat, west_south_east_north) -> bool:
 
 def image_exists(image_id: int, dataset: pandas.DataFrame):
     """return True if the image is in the dataset"""
+    if dataset is None:
+        return False
     return image_id in dataset["image_id"].values
 
 
@@ -83,13 +85,16 @@ def main(access_token, data_dir: Path, dataset: list):
     image_dir = data_dir / "mapillary2"
     annotations_file = data_dir / "annotations.arrow"
 
-    dataset_pd = pandas.read_feather(annotations_file)
+    if annotations_file.exists():
+        dataset_pd = pandas.read_feather(annotations_file)
+    else:
+        dataset_pd = None
 
     try:
-        total_tiles = sum(1 for _ in mercantile.tiles(west, south, east, north, 18))
+        total_tiles = sum(1 for _ in mercantile.tiles(west, south, east, north, 14))
 
         tiles_bar = tqdm(
-            mercantile.tiles(west, south, east, north, 18),
+            mercantile.tiles(west, south, east, north, 14),
             total=total_tiles
         )
         for tile in tiles_bar:
@@ -114,8 +119,12 @@ def main(access_token, data_dir: Path, dataset: list):
                         args=(dataset, feature['properties']['id'], fields, headers, image_dir)
                     ).start()
     finally:
+        print(f"{len(dataset)} new samples")
         new_dataset_pd = pandas.DataFrame(dataset, columns=["image_id", "camera_type", "capture_at", "computed_altitude", "computed_compass_angle", "lon", "lat", "rot x", "rot y", "rot z"])
 
-        dataset_pd = pandas.concat([new_dataset_pd, dataset_pd], ignore_index=True)
+        if annotations_file.exists():
+            dataset_pd = pandas.concat([new_dataset_pd, dataset_pd], ignore_index=True)
+        else:
+            dataset_pd = new_dataset_pd
 
         dataset_pd.to_feather(annotations_file)
