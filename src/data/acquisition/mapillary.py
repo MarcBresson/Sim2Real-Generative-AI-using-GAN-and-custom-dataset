@@ -9,7 +9,7 @@ from vt2geojson.tools import vt_bytes_to_geojson
 
 
 north =            48.9219
-west, east = 2.3976,     2.4699
+west, east = 2.1976,     2.4699
 south =            48.8072
 
 
@@ -82,7 +82,7 @@ def main(access_token, data_dir: Path, dataset: list):
     fields = ["thumb_2048_url", "camera_type", "captured_at", "computed_altitude", "computed_compass_angle", "computed_geometry", "computed_rotation"]
     headers = {"Authorization": f"OAuth {access_token}"}
 
-    image_dir = data_dir / "mapillary2"
+    image_dir = data_dir / "mapillary"
     annotations_file = data_dir / "annotations.arrow"
 
     if annotations_file.exists():
@@ -109,6 +109,9 @@ def main(access_token, data_dir: Path, dataset: list):
                 lat = feature['geometry']['coordinates'][1]
 
                 image_id = feature['properties']['id']
+
+                if feature['properties']['is_pano'] is False:
+                    continue
 
                 if image_exists(image_id, dataset_pd):
                     continue
