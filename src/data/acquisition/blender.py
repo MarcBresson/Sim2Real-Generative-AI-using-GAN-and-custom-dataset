@@ -168,6 +168,12 @@ def save_viewernode(save_dir: Path):
     np.save(save_dir / "raw", viewer)
 
 
+def image_exists(search_dir: Path, prefix: str, expected_length: int = 1):
+    search_results = list(search_dir.glob(f"{prefix}*"))
+
+    return len(search_results) == expected_length
+
+
 def main():
     render_pass_names = ["Depth", "Normal", "DiffCol"]
     render_pass_options = [{"use_viewer": True}, {"file_format": "PNG", "color_depth": "8", "color_mode": "RGB"}, {"file_format": "PNG", "color_depth": "8", "color_mode": "RGB"}]
@@ -186,6 +192,9 @@ def main():
 
     for streetview_data in read_data(dataset_path):
         image_id, lon, lat, alt, computed_compass_angle = streetview_data
+
+        if image_exists(savedir, str(image_id) + "_", len(render_pass_names)):
+            continue
 
         x, y = projection.from_geographic(lat, lon)
         place_camera((x, y, alt), computed_compass_angle)
