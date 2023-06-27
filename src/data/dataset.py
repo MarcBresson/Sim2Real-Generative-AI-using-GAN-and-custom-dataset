@@ -6,12 +6,15 @@ https://pytorch.org/vision/main/transforms.html
 """
 
 from pathlib import Path
+import logging
 
 import numpy as np
 import pandas as pd
 import torch
 from torch.utils.data import Dataset
 from torchvision.io import read_image
+
+logger = logging.getLogger(__name__)
 
 
 class CustomImageDataset(Dataset):
@@ -23,6 +26,7 @@ class CustomImageDataset(Dataset):
         render_passes: list[str],
     ):
         self.annotations = pd.read_feather(annotations_file)
+        self.filter_incomplete_rows()
 
         self.streetview_dir = streetview_dir
         self.simulated_dir = blender_dir
@@ -44,6 +48,33 @@ class CustomImageDataset(Dataset):
         sample = {"streetview": truth_img, "simulated": simul_img}
 
         return sample
+
+    def filter_incomplete_rows(self):
+        """
+        will filter out rows that are missing either one of their
+        simulated images or their streetview.
+        """
+        rows_to_delete = []
+
+        for index, row in self.annotations.iterrows():
+            img_id = str(row["image_id"])
+            if (
+                not image_exists(self.simulated_dir, img_id + "_", expected_length=len(self.render_passes))
+                and not image_exists(self.streetview_dir, img_id + ".")
+            ):
+                rows_to_delete.append(index)
+
+        self.annotations.drop(rows_to_delete)
+
+        logger.info("dataset - droped %s element because they were missing at least"
+                    "one image. The dataset now has %s samples", len(rows_to_delete),
+                    len(self.annotations))
+
+
+def image_exists(search_dir: Path, prefix: str, expected_length: int = 1):
+    search_results = list(search_dir.glob(f"{prefix}*"))
+
+    return len(search_results) == expected_length
 
 
 def get_simulated_image(simulated_dir: Path, image_id: int, render_passes: list[str] = None) -> torch.Tensor:
