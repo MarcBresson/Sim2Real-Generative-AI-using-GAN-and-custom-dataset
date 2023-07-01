@@ -23,7 +23,7 @@ class CustomImageDataset(Dataset):
         annotations_file: Path,
         streetview_dir: Path,
         blender_dir: Path,
-        render_passes: list[str],
+        render_passes: list[str] = None,
     ):
         self.annotations = pd.read_feather(annotations_file)
         self.filter_incomplete_rows()
@@ -57,10 +57,12 @@ class CustomImageDataset(Dataset):
         """
         rows_to_delete = []
 
+        expected_sim_files_nbr = 1 if self.render_passes is None else len(self.render_passes)
+
         for index, row in self.annotations.iterrows():
             img_id = str(row["image_id"])
             if (
-                not image_exists(self.simulated_dir, img_id + "_", expected_length=len(self.render_passes))
+                not image_exists(self.simulated_dir, img_id + "_", expected_length=expected_sim_files_nbr)
                 and not image_exists(self.streetview_dir, img_id + ".")
             ):
                 rows_to_delete.append(index)
