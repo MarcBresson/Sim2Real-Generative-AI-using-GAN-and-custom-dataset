@@ -32,6 +32,7 @@ class CustomImageDataset(Dataset):
         self.simulated_dir = blender_dir
 
         self.render_passes = render_passes
+        self.set_passes_channel_nbr()
 
     def __len__(self):
         return len(self.annotations)
@@ -43,7 +44,7 @@ class CustomImageDataset(Dataset):
         truth_img_path = truth_img_path.with_suffix(".jpg")
         truth_img = read_image(str(truth_img_path)) / 255
 
-        simul_img = get_simulated_image(self.render_passes, self.simulated_dir, image_id) / 255
+        simul_img, _ = get_simulated_image(self.render_passes, self.simulated_dir, image_id)
 
         sample = {"streetview": truth_img, "simulated": simul_img}
 
@@ -70,6 +71,19 @@ class CustomImageDataset(Dataset):
                     "one image. The dataset now has %s samples", len(rows_to_delete),
                     len(self.annotations))
 
+    @property
+    def passes_channel_nbr(self):
+        """return the number of channels for each pass in a simulated image."""
+        return self._passes_channel_nbr
+
+    def set_passes_channel_nbr(self):
+        """compute the number of channels for each pass in a simulated image."""
+        image_id = self.annotations.iloc[0]["image_id"]
+
+        _, passes_channel_nbr = get_simulated_image(self.render_passes, self.simulated_dir, image_id)
+
+        self._passes_channel_nbr = tuple(passes_channel_nbr)
+
 
 def image_exists(search_dir: Path, prefix: str, expected_length: int = 1):
     search_results = list(search_dir.glob(f"{prefix}*"))
@@ -77,8 +91,9 @@ def image_exists(search_dir: Path, prefix: str, expected_length: int = 1):
     return len(search_results) == expected_length
 
 
-def get_simulated_image(simulated_dir: Path, image_id: int, render_passes: list[str] = None) -> torch.Tensor:
+def get_simulated_image(simulated_dir: Path, image_id: int, render_passes: list[str] = None) -> tuple[torch.Tensor, list[int]]:
     images = []
+    nbr_channels = []
 
     for img_path in simulated_dir.glob(f"{image_id}_*"):
         render_pass_name = img_path.stem.split("_")[1]
@@ -91,9 +106,14 @@ def get_simulated_image(simulated_dir: Path, image_id: int, render_passes: list[
             else:
                 raise ValueError(f"{img_path.suffix} as image file is not supported. Use npy, jpg or png.")
 
+            if len(img.shape) == 2:
+                nbr_channels.append(1)
+            else:
+                nbr_channels.append(img.shape[0])
+
             images.append(img)
 
-    return concat_channels(images)
+    return concat_channels(images), nbr_channels
 
 
 def concat_channels(images: list[torch.Tensor]) -> torch.Tensor:
