@@ -11,7 +11,7 @@ import logging
 import numpy as np
 import pandas as pd
 import torch
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset, Subset, random_split
 from torchvision.io import read_image
 
 logger = logging.getLogger(__name__)
@@ -86,7 +86,6 @@ def get_simulated_image(simulated_dir: Path, image_id: int, render_passes: list[
         if render_passes is None or render_pass_name in render_passes:
             if img_path.suffix.lower() == ".npy":
                 img = torch.from_numpy(np.load(img_path))
-                img = img.unsqueeze(0)
             elif img_path.suffix.lower() in [".jpg", ".jpeg", ".png"]:
                 img = read_image(str(img_path))
             else:
@@ -111,5 +110,11 @@ def concat_channels(images: list[torch.Tensor]) -> torch.Tensor:
     return torch.cat(images)
 
 
-def split_train_test_val():
-    pass
+def split_train_test_val(dataset: Dataset, proportions: tuple[float, float, float]) -> tuple[Subset, Subset, Subset]:
+    if sum(proportions) != 1:
+        raise ValueError("The proportions of the splitting should sum up to 1.")
+
+    if len(proportions) != 3:
+        raise ValueError("You must specify 3 fractions for the train, test and validation subsets.")
+
+    return random_split(dataset, proportions, torch.Generator().manual_seed(42))
