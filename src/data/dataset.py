@@ -8,6 +8,7 @@ https://pytorch.org/vision/main/transforms.html
 from pathlib import Path
 import logging
 
+from tqdm import tqdm
 import numpy as np
 import pandas as pd
 import torch
@@ -23,15 +24,16 @@ class CustomImageDataset(Dataset):
         annotations_file: Path,
         streetview_dir: Path,
         blender_dir: Path,
-        render_passes: list[str] = None,
+        render_passes: dict[str, str] = None,
     ):
         self.annotations = pd.read_feather(annotations_file)
-        self.filter_incomplete_rows()
+        self.render_passes = set_render_passes(render_passes, blender_dir)
 
         self.streetview_dir = streetview_dir
         self.simulated_dir = blender_dir
 
-        self.render_passes = render_passes
+        self.filter_incomplete_rows()
+
         self.set_passes_channel_nbr()
 
     def __len__(self):
@@ -42,9 +44,9 @@ class CustomImageDataset(Dataset):
 
         truth_img_path = self.streetview_dir / str(image_id)
         truth_img_path = truth_img_path.with_suffix(".jpg")
-        truth_img = read_image(str(truth_img_path)) / 255
+        truth_img = read_image(str(truth_img_path)) / 1.0
 
-        simul_img, _ = get_simulated_image(self.render_passes, self.simulated_dir, image_id)
+        simul_img, _ = get_simulated_image(self.simulated_dir, image_id, self.render_passes)
 
         sample = {"streetview": truth_img, "simulated": simul_img}
 
@@ -57,20 +59,49 @@ class CustomImageDataset(Dataset):
         """
         rows_to_delete = []
 
-        expected_sim_files_nbr = 1 if self.render_passes is None else len(self.render_passes)
+        simulated_ids = dir_to_passes_id(self.simulated_dir)
+        streetview_ids = dir_to_passes_id(self.streetview_dir)
 
-        for index, row in self.annotations.iterrows():
-            img_id = str(row["image_id"])
-            if (
-                not image_exists(self.simulated_dir, img_id + "_", expected_length=expected_sim_files_nbr)
-                and not image_exists(self.streetview_dir, img_id + ".")
-            ):
-                rows_to_delete.append(index)
+        filtering_progression = tqdm(self.annotations.iterrows(), desc="filtering out incomplete rows", total=len(self.annotations))
+        for i, serie in filtering_progression:
+            img_id = serie.image_id
 
-        self.annotations.drop(rows_to_delete)
+            try:
+                for passname in self.render_passes.keys():
+                    if img_id not in simulated_ids[passname]["ids"]:
+                        raise FileNotFoundError
+
+                if img_id not in streetview_ids[""]["ids"]:
+                    raise FileNotFoundError
+            except FileNotFoundError:
+                rows_to_delete.append(i)
+
+        self.annotations = self.annotations.drop(index=rows_to_delete)
 
         logger.info("dataset - droped %s element because they were missing at least"
                     "one image. The dataset now has %s samples", len(rows_to_delete),
+                    len(self.annotations))
+
+    def delete_unloadable_data(self):
+        """try to load every simulated images, and delete them if it fails."""
+        index_to_drop = []
+
+        deletion_progression = tqdm(self.annotations.itertuples(), desc="deleting unloadable data", total=len(self.annotations))
+        for serie in deletion_progression:
+            try:
+                get_simulated_image(self.simulated_dir, serie.image_id, self.render_passes)
+            except (RuntimeError, ValueError):
+                # RuntimeError when file is empty
+                # ValueError when it was pickled
+                index_to_drop.append(serie.Index)
+
+                for passname, ext in self.render_passes.items():
+                    img_path = construct_img_path(self.simulated_dir, serie.image_id, ext, passname)
+                    img_path.unlink()
+
+        self.annotations = self.annotations.drop(index=index_to_drop)
+        logger.info("dataset - droped %s element because the data could not be loaded."
+                    "The dataset now has %s samples", len(index_to_drop),
                     len(self.annotations))
 
     @property
@@ -82,7 +113,7 @@ class CustomImageDataset(Dataset):
         """compute the number of channels for each pass in a simulated image."""
         image_id = self.annotations.iloc[0]["image_id"]
 
-        _, passes_channel_nbr = get_simulated_image(self.render_passes, self.simulated_dir, image_id)
+        _, passes_channel_nbr = get_simulated_image(self.simulated_dir, image_id, self.render_passes)
 
         self._passes_channel_nbr = tuple(passes_channel_nbr)
 
@@ -93,29 +124,28 @@ def image_exists(search_dir: Path, prefix: str, expected_length: int = 1):
     return len(search_results) == expected_length
 
 
-def get_simulated_image(simulated_dir: Path, image_id: int, render_passes: list[str] = None) -> tuple[torch.Tensor, list[int]]:
+def get_simulated_image(simulated_dir: Path, image_id: int, render_passes: dict[str, str]) -> tuple[torch.Tensor, list[int]]:
     images = []
     nbr_channels = []
 
-    for img_path in simulated_dir.glob(f"{image_id}_*"):
-        render_pass_name = img_path.stem.split("_")[1]
+    for passname, ext in render_passes.items():
+        img_path = construct_img_path(simulated_dir, image_id, ext, passname)
 
-        if render_passes is None or render_pass_name in render_passes:
-            if img_path.suffix.lower() == ".npy":
-                img = torch.from_numpy(np.load(img_path))
-            elif img_path.suffix.lower() in [".jpg", ".jpeg", ".png"]:
-                img = read_image(str(img_path))
-            else:
-                raise ValueError(f"{img_path.suffix} as image file is not supported. Use npy, jpg or png.")
+        if img_path.suffix.lower() == ".npy":
+            img = torch.from_numpy(np.load(img_path))
+        elif img_path.suffix.lower() in [".jpg", ".jpeg", ".png"]:
+            img = read_image(str(img_path))
+        else:
+            raise ValueError(f"{img_path.suffix} as image file is not supported. Use npy, jpg or png.")
 
-            if len(img.shape) == 2:
-                nbr_channels.append(1)
-            else:
-                nbr_channels.append(img.shape[0])
+        if len(img.shape) == 2:
+            nbr_channels.append(1)
+        else:
+            nbr_channels.append(img.shape[0])
 
-            images.append(img)
+        images.append(img)
 
-    return concat_channels(images), nbr_channels
+    return concat_channels(images).type(torch.float32), nbr_channels
 
 
 def concat_channels(images: list[torch.Tensor]) -> torch.Tensor:
@@ -124,19 +154,64 @@ def concat_channels(images: list[torch.Tensor]) -> torch.Tensor:
     green in three different files, you can use this function to create
     a single rgb image.
     """
-    for img in images:
+    for i, img in enumerate(images):
         # if img has only two dim (one channel), burry the channel in a separate dim
         if len(img.shape) == 2:
-            img = torch.unsqueeze(img, 0)
+            images[i] = torch.unsqueeze(img, 0)
 
     return torch.cat(images)
 
 
-def split_train_test_val(dataset: Dataset, proportions: tuple[float, float, float]) -> tuple[Subset, Subset, Subset]:
+def split_train_val_test(dataset: Dataset, proportions: tuple[float, float, float]) -> tuple[Subset, Subset, Subset]:
     if sum(proportions) != 1:
         raise ValueError("The proportions of the splitting should sum up to 1.")
 
     if len(proportions) != 3:
-        raise ValueError("You must specify 3 fractions for the train, test and validation subsets.")
+        raise ValueError("You must specify 3 fractions for the train, validation and test subsets.")
 
     return random_split(dataset, proportions, torch.Generator().manual_seed(42))
+
+
+def set_render_passes(render_passes: list[str], blender_dir: Path) -> dict[str, str]:
+    """if render_passes is None, will include all the render_passes found in the directory"""
+    if render_passes is not None:
+        return render_passes
+
+    render_passes_ = {passname: value["ext"] for passname, value in dir_to_passes_id(blender_dir).items()}
+
+    return render_passes_
+
+
+def dir_to_passes_id(dir: Path):
+    """list all the ids for each pass in a directory"""
+    ids = {}
+    for file in dir.iterdir():
+        if not file.is_file():
+            continue
+
+        id_img = file.stem.split("_")[0]
+        if "_" in file.stem:
+            pass_name = file.stem.split("_")[1]
+        else:
+            pass_name = ""
+
+        if pass_name not in ids:
+            extension = file.suffix
+            ids[pass_name] = {"ext": extension, "ids": []}
+
+        ids[pass_name]["ids"].append(int(id_img))
+
+    return ids
+
+
+def construct_img_path(dir: Path, image_id: int | str, extension: str, passname: str = None):
+    """construct the path to an image"""
+    if passname is not None:
+        img_filename = str(image_id) + "_" + passname
+    else:
+        img_filename = str(image_id)
+
+    img_path = dir / img_filename
+    img_path = img_path.with_suffix(extension)
+
+    return img_path
