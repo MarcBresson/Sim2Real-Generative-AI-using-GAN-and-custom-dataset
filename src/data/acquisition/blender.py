@@ -165,7 +165,7 @@ def save_viewernode(save_dir: Path):
     viewer = viewer[::-1, :]  # flip horizontally
     viewer = viewer * (viewer < 1.0e+10)  # remove the sky
     viewer = viewer.astype(np.float16)
-    np.save(save_dir / "raw", viewer)
+    np.savez_compressed(save_dir / "raw", viewer)
 
 
 def image_exists(search_dir: Path, prefix: str, expected_length: int = 1):
