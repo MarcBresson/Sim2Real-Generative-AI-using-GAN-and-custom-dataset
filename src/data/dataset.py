@@ -6,6 +6,7 @@ https://pytorch.org/vision/main/transforms.html
 """
 
 from pathlib import Path
+from collections import Counter
 import logging
 
 from tqdm import tqdm
@@ -14,6 +15,8 @@ import pandas as pd
 import torch
 from torch.utils.data import Dataset, Subset, random_split
 from torchvision.io import read_image
+
+from src.data.acquisition.array_compresser import load_compressed_array
 
 logger = logging.getLogger(__name__)
 
@@ -54,7 +57,7 @@ class CustomImageDataset(Dataset):
 
     def filter_incomplete_rows(self):
         """
-        will filter out rows that are missing either one of their
+        filters out rows that are missing either one of their
         simulated images or their streetview.
         """
         rows_to_delete = []
@@ -62,24 +65,26 @@ class CustomImageDataset(Dataset):
         simulated_ids = dir_to_passes_id(self.simulated_dir)
         streetview_ids = dir_to_passes_id(self.streetview_dir)
 
-        filtering_progression = tqdm(self.annotations.iterrows(), desc="filtering out incomplete rows", total=len(self.annotations))
-        for i, serie in filtering_progression:
-            img_id = serie.image_id
+        all_ids = []
+        for passname in simulated_ids.keys():
+            all_ids.extend(simulated_ids[passname]["ids"])
+        all_ids.extend(streetview_ids[""]["ids"])
 
-            try:
-                for passname in self.render_passes.keys():
-                    if img_id not in simulated_ids[passname]["ids"]:
-                        raise FileNotFoundError
+        count_passes = Counter(all_ids)
+        target_nbr_passes = len(simulated_ids) + len(streetview_ids)
 
-                if img_id not in streetview_ids[""]["ids"]:
-                    raise FileNotFoundError
-            except FileNotFoundError:
-                rows_to_delete.append(i)
+        rows_to_delete = 0
+        valid_ids = []
+        for img_id, count in count_passes.items():
+            if count == target_nbr_passes:
+                valid_ids.append(img_id)
+            else:
+                rows_to_delete += 1
 
-        self.annotations = self.annotations.drop(index=rows_to_delete)
+        self.annotations = self.annotations[self.annotations["image_id"].isin(valid_ids)]
 
         logger.info("dataset - droped %s element because they were missing at least"
-                    "one image. The dataset now has %s samples", len(rows_to_delete),
+                    "one image. The dataset now has %s samples", rows_to_delete,
                     len(self.annotations))
 
     def delete_unloadable_data(self):
@@ -133,6 +138,8 @@ def get_simulated_image(simulated_dir: Path, image_id: int, render_passes: dict[
 
         if img_path.suffix.lower() == ".npy":
             img = torch.from_numpy(np.load(img_path))
+        if img_path.suffix.lower() == ".npz":
+            img = torch.from_numpy(load_compressed_array(img_path))
         elif img_path.suffix.lower() in [".jpg", ".jpeg", ".png"]:
             img = read_image(str(img_path))
         else:
