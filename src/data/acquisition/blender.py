@@ -1,9 +1,17 @@
+"""
+TODO:
+- use viewernode for every pass
+- define a dict for each pass specifying : number of channels to keep
+- use PIL to save to PNG (https://pillow.readthedocs.io/en/stable/handbook/image-file-formats.html#png)
+"""
+
 from pathlib import Path
+from math import radians, sin, cos, log, atan, tan
+
 from numpy import deg2rad
 import pandas as pd
 import bpy
 import numpy as np
-from math import radians, sin, cos, log, atan, tan
 
 
 class TransverseMercator:
