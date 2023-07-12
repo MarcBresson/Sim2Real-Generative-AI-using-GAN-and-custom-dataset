@@ -123,12 +123,6 @@ class CustomImageDataset(Dataset):
         self._passes_channel_nbr = tuple(passes_channel_nbr)
 
 
-def image_exists(search_dir: Path, prefix: str, expected_length: int = 1):
-    search_results = list(search_dir.glob(f"{prefix}*"))
-
-    return len(search_results) == expected_length
-
-
 def get_simulated_image(simulated_dir: Path, image_id: int, render_passes: dict[str, str]) -> tuple[torch.Tensor, list[int]]:
     images = []
     nbr_channels = []
