@@ -31,6 +31,8 @@ def process_img_data(image_id: int, image_data: dict):
     # rot z, rot y, rot x. See https://opensfm.org/docs/cam_coord_system.html
     data.extend(image_data["computed_rotation"])
 
+    data.extend(image_data["thumb_2048_url"])
+
     return data
 
 
@@ -123,7 +125,7 @@ def main(access_token, data_dir: Path, dataset: list):
                     ).start()
     finally:
         print(f"{len(dataset)} new samples")
-        new_dataset_pd = pandas.DataFrame(dataset, columns=["image_id", "camera_type", "capture_at", "computed_altitude", "computed_compass_angle", "lon", "lat", "rot x", "rot y", "rot z"])
+        new_dataset_pd = pandas.DataFrame(dataset, columns=["image_id", "camera_type", "capture_at", "computed_altitude", "computed_compass_angle", "lon", "lat", "rot x", "rot y", "rot z", "thumb_2048_url"])
 
         if annotations_file.exists():
             dataset_pd = pandas.concat([new_dataset_pd, dataset_pd], ignore_index=True)
