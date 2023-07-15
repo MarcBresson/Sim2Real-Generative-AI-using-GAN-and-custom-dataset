@@ -8,6 +8,7 @@ https://pytorch.org/vision/main/transforms.html
 from pathlib import Path
 from collections import Counter
 import logging
+import math
 
 from tqdm import tqdm
 import numpy as np
@@ -163,14 +164,54 @@ def concat_channels(images: list[torch.Tensor]) -> torch.Tensor:
     return torch.cat(images)
 
 
-def split_train_val_test(dataset: Dataset, proportions: tuple[float, float, float]) -> tuple[Subset, Subset, Subset]:
-    if sum(proportions) != 1:
-        raise ValueError("The proportions of the splitting should sum up to 1.")
+def dataset_split(dataset: Dataset, proportions: list[float]) -> tuple[Subset]:
+    """
+    split a dataset in regards in proportions. It can be a mix of integers
+    and float numbers.
 
-    if len(proportions) != 3:
-        raise ValueError("You must specify 3 fractions for the train, validation and test subsets.")
+    Parameters
+    ----------
+    dataset : Dataset
+        dataset to split
+    proportions : list[float]
+        the sum of the integers must be less than the length of the dataset,
+        and the sum of the fractions must be <= 1. If integers and fractions
+        are mixed up, it will create subsets with integres first, and will
+        fractionate the remaining dataset.
 
-    return random_split(dataset, proportions, torch.Generator().manual_seed(42))
+    Returns
+    -------
+    tuple[Subset]
+        all subsets with the same order of proportion.
+    """
+    integer_sum = sum([n for n in proportions if isinstance(n, int)])
+    remaining_length = len(dataset) - integer_sum
+
+    if remaining_length < 0:
+        raise ValueError("There is not enough samples in the given dataset to satisfy"
+                         " all the integers condtions.")
+
+    if remaining_length != 0:
+        int_divider = len(dataset)
+        fraction_divider = len(dataset) / remaining_length
+
+        for i, p in enumerate(proportions):
+            if isinstance(p, int):
+                proportions[i] = p / int_divider
+            elif isinstance(p, float) and p <= 1:
+                proportions[i] = p / fraction_divider
+
+    # float division error can sometimes bring the sum to more than 1
+    # so this bit of code spread the error on each fraction.
+    if math.isclose(sum(proportions), 1) and sum(proportions) > 1:
+        too_much = sum(proportions) - 1
+
+        for i, p in enumerate(proportions):
+            proportions[i] = p - too_much / len(proportions)
+
+    subsets = random_split(dataset, proportions, torch.Generator().manual_seed(42))
+
+    return subsets
 
 
 def set_render_passes(render_passes: list[str], blender_dir: Path) -> dict[str, str]:
