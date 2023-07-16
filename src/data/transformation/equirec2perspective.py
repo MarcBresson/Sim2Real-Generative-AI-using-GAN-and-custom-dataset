@@ -29,8 +29,8 @@ class Equirec:
         self.img_batch = img_batch.to(device)
         self.batch_size = img_batch.shape[0]
 
-        self._width = img_batch.shape[2]
-        self._height = img_batch.shape[1]
+        self._width = img_batch.shape[3]
+        self._height = img_batch.shape[2]
 
     def to_persp(self, yaw: float, pitch: float, w_fov: int = 90, aspect_ratio: float = 1) -> torch.Tensor:
         """
