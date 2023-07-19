@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Union
 from pathlib import Path
 import json
 
@@ -26,7 +26,7 @@ class MetricLogger:
 
         json.dump(self.metres, self.save_file.open(mode="w"))
 
-    def _append(self, name: str, value: float | int | Tensor):
+    def _append(self, name: str, value: Union[float, int, Tensor]):
         if name not in self.metres:
             self.metres[name] = [None] * len(self.metres)
 

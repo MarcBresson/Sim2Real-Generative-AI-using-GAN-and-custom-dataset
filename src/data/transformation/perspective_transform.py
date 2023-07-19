@@ -1,4 +1,4 @@
-from typing import Sequence
+from typing import Sequence, Union
 
 import torch
 from torch import Tensor
@@ -15,9 +15,9 @@ class RandomPerspective():
     """
     def __init__(
         self,
-        yaw: float | tuple[float, float],
-        pitch: float | tuple[float, float],
-        w_fov: int | tuple[int, int]
+        yaw: Union[float, tuple[float, float]],
+        pitch: Union[float, tuple[float, float]],
+        w_fov: Union[int, tuple[int, int]]
     ):
         """
         Parameters
