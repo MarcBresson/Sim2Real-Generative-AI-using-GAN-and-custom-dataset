@@ -12,6 +12,7 @@ classifiers = [
 
 dependencies = [
     "pyproj",
+    "tqdm",
     "numpy",
     "opencv-python",
     "torch",
