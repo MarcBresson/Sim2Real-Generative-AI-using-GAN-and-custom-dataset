@@ -5,6 +5,7 @@ https://pytorch.org/tutorials/beginner/data_loading_tutorial.html
 https://pytorch.org/vision/main/transforms.html
 """
 
+from typing import Union
 from pathlib import Path
 from collections import Counter
 import logging
@@ -37,6 +38,7 @@ class CustomImageDataset(Dataset):
         self.simulated_dir = blender_dir
 
         self.filter_incomplete_rows()
+        logging.info("the dataset has %s samples", len(self.annotations))
 
         self.set_passes_channel_nbr()
 
@@ -48,7 +50,7 @@ class CustomImageDataset(Dataset):
 
         truth_img_path = self.streetview_dir / str(image_id)
         truth_img_path = truth_img_path.with_suffix(".jpg")
-        truth_img = read_image(str(truth_img_path)) / 1.0
+        truth_img = read_image(str(truth_img_path)).type(torch.float32)
 
         simul_img, _ = get_simulated_image(self.simulated_dir, image_id, self.render_passes)
 
@@ -61,8 +63,6 @@ class CustomImageDataset(Dataset):
         filters out rows that are missing either one of their
         simulated images or their streetview.
         """
-        rows_to_delete = []
-
         simulated_ids = dir_to_passes_id(self.simulated_dir)
         streetview_ids = dir_to_passes_id(self.streetview_dir)
 
@@ -87,6 +87,41 @@ class CustomImageDataset(Dataset):
         logger.info("dataset - droped %s element because they were missing at least"
                     "one image. The dataset now has %s samples", rows_to_delete,
                     len(self.annotations))
+
+    def delete_incomplete_files(self):
+        simulated_ids = dir_to_passes_id(self.simulated_dir)
+        streetview_ids = dir_to_passes_id(self.streetview_dir)
+
+        all_ids = []
+        for passname in simulated_ids.keys():
+            all_ids.extend(simulated_ids[passname]["ids"])
+        all_ids.extend(streetview_ids[""]["ids"])
+
+        count_passes = Counter(all_ids)
+        target_nbr_passes = len(simulated_ids) + len(streetview_ids)
+
+        rows_to_delete = 0
+        valid_ids = []
+        for img_id, count in count_passes.items():
+            if count == target_nbr_passes:
+                valid_ids.append(img_id)
+            else:
+                rows_to_delete += 1
+
+        to_remove = self.annotations[~self.annotations["image_id"].isin(valid_ids)]
+        to_remove_ids = to_remove["image_id"].to_list()
+
+        nbr_deleted = 0
+        for image_id in to_remove_ids:
+            for passname, ext in self.render_passes.items():
+                img_path = construct_img_path(self.simulated_dir, image_id, ext, passname)
+                try:
+                    img_path.unlink()
+                    nbr_deleted += 1
+                except FileNotFoundError:
+                    pass
+
+        logger.info("dataset - deleted %s files because they did not form a complete set", nbr_deleted)
 
     def delete_unloadable_data(self):
         """try to load every simulated images, and delete them if it fails."""
@@ -147,7 +182,9 @@ def get_simulated_image(simulated_dir: Path, image_id: int, render_passes: dict[
 
         images.append(img)
 
-    return concat_channels(images).type(torch.float32), nbr_channels
+    sim_image = concat_channels(images).type(torch.float32)
+
+    return sim_image, nbr_channels
 
 
 def concat_channels(images: list[torch.Tensor]) -> torch.Tensor:
@@ -246,7 +283,7 @@ def dir_to_passes_id(dir: Path):
     return ids
 
 
-def construct_img_path(dir: Path, image_id: int | str, extension: str, passname: str = None):
+def construct_img_path(dir: Path, image_id: Union[int, str], extension: str, passname: str = None):
     """construct the path to an image"""
     if passname is not None:
         img_filename = str(image_id) + "_" + passname
