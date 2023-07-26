@@ -2,6 +2,7 @@ from torch import Tensor
 import numpy as np
 
 from .utils import plot_sim, plot_streetview_with_discrimination
+from src.data.transformation import toNumpy
 
 
 def batch_to_numpy(batch: Tensor) -> list[np.ndarray]:
@@ -9,10 +10,11 @@ def batch_to_numpy(batch: Tensor) -> list[np.ndarray]:
     Convert a batch of images to a list of nd.array, scaled back to
     range [0, 255].
     """
+    batch_np = toNumpy()(batch)
+
     np_images = []
-    for torch_image in batch:
-        img = torch_image.permute(1, 2, 0)
-        np_images.append(img.cpu().detach().numpy())
+    for torch_image in batch_np:
+        np_images.append(torch_image)
 
     return np_images
 
