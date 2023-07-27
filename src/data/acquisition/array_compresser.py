@@ -1,3 +1,4 @@
+from typing import Union
 from pathlib import Path
 from pickle import UnpicklingError
 import logging
@@ -6,7 +7,7 @@ from tqdm import tqdm
 import numpy as np
 
 
-def load_compressed_array(file: str | Path) -> np.ndarray:
+def load_compressed_array(file: Union[str, Path]) -> np.ndarray:
     """
     load the first numpy array in a compressed file.
 
@@ -26,7 +27,7 @@ def load_compressed_array(file: str | Path) -> np.ndarray:
     return npz_file[array_name]
 
 
-def save_compressed_array(file: str | Path, array: np.ndarray):
+def save_compressed_array(file: Union[str, Path], array: np.ndarray):
     """save a numpy array to a compressed file."""
     np.savez_compressed(file, array)
 
