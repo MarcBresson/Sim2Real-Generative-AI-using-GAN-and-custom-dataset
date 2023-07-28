@@ -50,7 +50,7 @@ class CustomImageDataset(Dataset):
 
         truth_img_path = self.streetview_dir / str(image_id)
         truth_img_path = truth_img_path.with_suffix(".jpg")
-        truth_img = read_image(str(truth_img_path)).type(torch.float32)
+        truth_img = read_image(str(truth_img_path)).float()
 
         simul_img, _ = get_simulated_image(self.simulated_dir, image_id, self.render_passes)
 
@@ -182,7 +182,7 @@ def get_simulated_image(simulated_dir: Path, image_id: int, render_passes: dict[
 
         images.append(img)
 
-    sim_image = concat_channels(images).type(torch.float32)
+    sim_image = concat_channels(images).float()
 
     return sim_image, nbr_channels
 
@@ -246,7 +246,15 @@ def dataset_split(dataset: Dataset, proportions: list[float]) -> tuple[Subset]:
         for i, p in enumerate(proportions):
             proportions[i] = p - too_much / len(proportions)
 
+    discard_overflow = False
+    if not math.isclose(sum(proportions), 1) and sum(proportions) < 1:
+        discard_overflow = True
+        proportions.append(1 - sum(proportions))
+
     subsets = random_split(dataset, proportions, torch.Generator().manual_seed(42))
+
+    if discard_overflow:
+        subsets.pop()
 
     return subsets
 
