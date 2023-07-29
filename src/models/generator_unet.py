@@ -1,13 +1,12 @@
 import torch
-from torch import nn, Tensor, device
-
-from src.models.blocks.shortcut_connection import UnetSkipConnectionBlock
+from torch import nn, device as Device
 
 
 class UnetGenerator(nn.Module):
     def __init__(self, input_nc, output_nc, num_downs, ngf=64,
-                 norm_layer=nn.BatchNorm2d, use_dropout=False, device: device = device("cuda:0")):
-        super(UnetGenerator, self).__init__()
+                 norm_layer=nn.BatchNorm2d, use_dropout=False, lr: float = 1e-3,
+                 device: Device = Device("cuda:0")):
+        super().__init__()
 
         # construct unet structure
         unet_block = UnetSkipConnectionBlock(ngf * 8, ngf * 8, norm_layer=norm_layer, innermost=True)
@@ -22,35 +21,57 @@ class UnetGenerator(nn.Module):
         self.model.to(device)
 
         # https://machinelearningmastery.com/adam-optimization-algorithm-for-deep-learning/
-        self.optimizer = torch.optim.Adam(self.model.parameters())
+        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=lr)
 
     def forward(self, input):
         return self.model(input)
 
-    def compute_loss(self, real_input: Tensor, generated_input: Tensor) -> Tensor:
-        """maximize discriminator error"""
-        predic_real = self(real_input)
-        predic_gene = self(generated_input)
 
-        target_real = torch.Tensor(1.).expand_as(predic_real)
-        target_gene = torch.Tensor(0.).expand_as(predic_gene)
+class UnetSkipConnectionBlock(nn.Module):
+    def __init__(self, outer_nc, inner_nc, input_nc=None,
+                 submodule=None, outermost=False, innermost=False, norm_layer=nn.BatchNorm2d, use_dropout=False):
+        super().__init__()
+        self.outermost = outermost
+        use_bias = norm_layer == nn.InstanceNorm2d
+        if input_nc is None:
+            input_nc = outer_nc
+        downconv = nn.Conv2d(input_nc, inner_nc, kernel_size=4,
+                             stride=2, padding=1, bias=use_bias)
+        downrelu = nn.LeakyReLU(0.2, True)
+        downnorm = norm_layer(inner_nc)
+        uprelu = nn.ReLU(True)
+        upnorm = norm_layer(outer_nc)
 
-        loss = self.loss(
-            torch.cat([predic_real, predic_gene]),
-            torch.cat([target_real, target_gene])
-        )
-        return loss
+        if outermost:
+            upconv = nn.ConvTranspose2d(inner_nc * 2, outer_nc,
+                                        kernel_size=4, stride=2,
+                                        padding=1)
+            down = [downconv]
+            up = [uprelu, upconv, nn.Sigmoid()]
+            model = down + [submodule] + up
+        elif innermost:
+            upconv = nn.ConvTranspose2d(inner_nc, outer_nc,
+                                        kernel_size=4, stride=2,
+                                        padding=1, bias=use_bias)
+            down = [downrelu, downconv]
+            up = [uprelu, upconv, upnorm]
+            model = down + up
+        else:
+            upconv = nn.ConvTranspose2d(inner_nc * 2, outer_nc,
+                                        kernel_size=4, stride=2,
+                                        padding=1, bias=use_bias)
+            down = [downrelu, downconv, downnorm]
+            up = [uprelu, upconv, upnorm]
 
-    def backward(self, real_input: Tensor, generated_input: Tensor) -> Tensor:
-        loss_value = self.compute_loss(real_input, generated_input)
-        loss_value.backward()
-        return loss_value
+            if use_dropout:
+                model = down + [submodule] + up + [nn.Dropout(0.5)]
+            else:
+                model = down + [submodule] + up
 
-    def fit(self, real_input: Tensor, generated_input: Tensor):
-        """
-        fit the discriminator with the real sample and the sample
-        that's coming out of the generator.
-        """
-        self.optimizer.zero_grad()
-        self.backward(real_input, generated_input)
-        self.optimizer.step()
+        self.model = nn.Sequential(*model)
+
+    def forward(self, x):
+        if self.outermost:
+            return self.model(x)
+        else:
+            return torch.cat([x, self.model(x)], 1)
