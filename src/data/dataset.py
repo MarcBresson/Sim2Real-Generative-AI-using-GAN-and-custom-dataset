@@ -29,13 +29,19 @@ class CustomImageDataset(Dataset):
         annotations_file: Path,
         streetview_dir: Path,
         blender_dir: Path,
+        transform,
         render_passes: dict[str, str] = None,
+        device: torch.device = torch.device("cuda:0")
     ):
         self.annotations = pd.read_feather(annotations_file)
         self.render_passes = set_render_passes(render_passes, blender_dir)
 
         self.streetview_dir = streetview_dir
         self.simulated_dir = blender_dir
+
+        self.device = device
+
+        self.transform = transform
 
         self.filter_incomplete_rows()
         logging.info("the dataset has %s samples", len(self.annotations))
@@ -54,7 +60,14 @@ class CustomImageDataset(Dataset):
 
         simul_img, _ = get_simulated_image(self.simulated_dir, image_id, self.render_passes)
 
+        truth_img = truth_img.to(self.device)
+        simul_img = simul_img.to(self.device)
+
         sample = {"streetview": truth_img, "simulated": simul_img}
+        sample = self.transform(sample)
+
+        # transform converts the sample to a batched sample, so we debatched in for the dataloader
+        sample = {"streetview": sample["streetview"][0], "simulated": sample["simulated"][0]}
 
         return sample
 
