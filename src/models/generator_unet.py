@@ -21,7 +21,7 @@ class UnetGenerator(nn.Module):
         self.model.to(device)
 
         # https://machinelearningmastery.com/adam-optimization-algorithm-for-deep-learning/
-        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=lr)
+        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=lr, betas=(0.5, 0.999))
 
     def forward(self, input):
         return self.model(input)
@@ -47,7 +47,7 @@ class UnetSkipConnectionBlock(nn.Module):
                                         kernel_size=4, stride=2,
                                         padding=1)
             down = [downconv]
-            up = [uprelu, upconv, nn.Sigmoid()]
+            up = [uprelu, upconv, nn.Tanh()]
             model = down + [submodule] + up
         elif innermost:
             upconv = nn.ConvTranspose2d(inner_nc, outer_nc,
