@@ -1,5 +1,5 @@
 import torch
-from torch import Tensor, device, nn
+from torch import Tensor, nn, device as Device
 
 from src.eval.gan_loss import BCEWithLogitsLoss
 
@@ -13,7 +13,7 @@ class PatchGAN(nn.Module):
         nbr_filters: int = 64,
         n_layers: int = 3,
         norm_layer=nn.BatchNorm2d,
-        device: device = device("cuda:0")
+        device: Device = Device("cuda:0")
     ):
         """
         Construct a PatchGAN discriminator
@@ -75,27 +75,32 @@ class PatchGAN(nn.Module):
     def forward(self, input_: Tensor):
         return self.model(input_)
 
-    def loss_fn(self, real_input: Tensor, generated_input: Tensor):
-        loss_real = self.loss(real_input, True)
-        loss_gen = self.loss(generated_input, False)
+    def compute_loss(self, real_input: Tensor, generated_input: Tensor):
+        loss_real = self.loss(self.forward(real_input), True)
+        loss_gen = self.loss(self.forward(generated_input.detach()), False)
 
-        self.loss_value = loss_real + loss_gen
+        self.loss_value = (loss_real + loss_gen) * 0.5
 
     def fit(self, real_input: Tensor, generated_input: Tensor):
         """
         fit the discriminator with the real sample and the sample
         that's coming out of the generator.
         """
+        # switch the model to train mode
         self.train()
+
         self.optimizer.zero_grad()
 
-        self.loss_fn(real_input, generated_input)
+        self.compute_loss(real_input, generated_input)
         self.loss_value.backward()
 
         self.optimizer.step()
 
     def test(self, real_input: Tensor, generated_input: Tensor):
+        # switch the model to eval mode
+        self.eval()
+
         self.real_discrim = self.forward(real_input)
         self.gene_discrim = self.forward(generated_input)
 
-        self.loss_fn(real_input, generated_input)
+        self.compute_loss(real_input, generated_input)
