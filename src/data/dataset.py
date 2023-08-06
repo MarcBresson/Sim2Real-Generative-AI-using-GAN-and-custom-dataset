@@ -203,9 +203,15 @@ def get_simulated_image(simulated_dir: Path, image_id: int, render_passes: dict[
         if img_path.suffix.lower() == ".npz":
             img = torch.from_numpy(load_compressed_array(img_path))
         elif img_path.suffix.lower() in [".jpg", ".jpeg", ".png"]:
-            img = read_image(str(img_path))
+            try:
+                img = read_image(str(img_path))
+            except RuntimeError as exc:
+                raise RuntimeError(f"Image id: {image_id}") from exc
         else:
             raise ValueError(f"{img_path.suffix} as image file is not supported. Use npy, jpg or png.")
+
+        if passname == "Depth":
+            img = transformation.Remap(0, img.max())(img)
 
         if len(img.shape) == 2:
             nbr_channels.append(1)
