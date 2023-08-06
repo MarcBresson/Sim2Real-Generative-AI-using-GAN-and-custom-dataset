@@ -52,6 +52,17 @@ class CustomImageDataset(Dataset):
         return len(self.annotations)
 
     def __getitem__(self, idx) -> dict[str, torch.Tensor]:
+        sample = self.get_untransformed_sample(idx)
+
+        # the transform operation converts single sample to a batched sample
+        sample = self.transform(sample)
+
+        # we debatched the sample for the dataloader
+        sample = {"streetview": sample["streetview"][0], "simulated": sample["simulated"][0]}
+
+        return sample
+
+    def get_untransformed_sample(self, idx) -> dict[str, torch.Tensor]:
         image_id = self.annotations.iloc[idx]["image_id"]
 
         truth_img_path = self.streetview_dir / str(image_id)
@@ -64,10 +75,6 @@ class CustomImageDataset(Dataset):
         simul_img = simul_img.to(self.device)
 
         sample = {"streetview": truth_img, "simulated": simul_img}
-        sample = self.transform(sample)
-
-        # transform converts the sample to a batched sample, so we debatched in for the dataloader
-        sample = {"streetview": sample["streetview"][0], "simulated": sample["simulated"][0]}
 
         return sample
 
@@ -214,7 +221,7 @@ def concat_channels(images: list[torch.Tensor]) -> torch.Tensor:
     return torch.cat(images)
 
 
-def dataset_split(dataset: Dataset, proportions: list[float]) -> tuple[Subset]:
+def dataset_split(dataset: Dataset, proportions: list[float]) -> list[Subset]:
     """
     split a dataset in regards in proportions. It can be a mix of integers
     and float numbers.
@@ -231,7 +238,7 @@ def dataset_split(dataset: Dataset, proportions: list[float]) -> tuple[Subset]:
 
     Returns
     -------
-    tuple[Subset]
+    list[Subset]
         all subsets with the same order of proportion.
     """
     integer_sum = sum([n for n in proportions if isinstance(n, int)])
