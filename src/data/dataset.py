@@ -19,6 +19,7 @@ from torch.utils.data import Dataset, Subset, random_split
 from torchvision.io import read_image
 
 from src.data.acquisition.array_compresser import load_compressed_array
+from src.data import transformation
 
 logger = logging.getLogger(__name__)
 
@@ -29,9 +30,9 @@ class CustomImageDataset(Dataset):
         annotations_file: Path,
         streetview_dir: Path,
         blender_dir: Path,
-        transform,
         render_passes: dict[str, str] = None,
-        device: torch.device = torch.device("cuda:0")
+        transform=None,
+        to_device: torch.device = None
     ):
         self.annotations = pd.read_feather(annotations_file)
         self.render_passes = set_render_passes(render_passes, blender_dir)
@@ -39,9 +40,9 @@ class CustomImageDataset(Dataset):
         self.streetview_dir = streetview_dir
         self.simulated_dir = blender_dir
 
-        self.device = device
-
         self.transform = transform
+
+        self.to_device = to_device
 
         self.filter_incomplete_rows()
         logging.info("the dataset has %s samples", len(self.annotations))
@@ -54,11 +55,12 @@ class CustomImageDataset(Dataset):
     def __getitem__(self, idx) -> dict[str, torch.Tensor]:
         sample = self.get_untransformed_sample(idx)
 
-        # the transform operation converts single sample to a batched sample
-        sample = self.transform(sample)
+        if self.transform is not None:
+            sample = self.transform_sample(sample)
 
-        # we debatched the sample for the dataloader
-        sample = {"streetview": sample["streetview"][0], "simulated": sample["simulated"][0]}
+        if self.to_device is not None:
+            sample["streetview"].to(self.to_device)
+            sample["simulated"].to(self.to_device)
 
         return sample
 
@@ -71,10 +73,20 @@ class CustomImageDataset(Dataset):
 
         simul_img, _ = get_simulated_image(self.simulated_dir, image_id, self.render_passes)
 
-        truth_img = truth_img.to(self.device)
-        simul_img = simul_img.to(self.device)
-
         sample = {"streetview": truth_img, "simulated": simul_img}
+
+        return sample
+
+    def transform_sample(self, sample):
+        if self.transform is None:
+            raise ValueError("No transformation given. Use CustomImageDataset"
+                             "(..., transform=transform), to allow transformation.")
+
+        # the transform operation converts single sample to a batched sample
+        sample = self.transform(sample)
+
+        # we debatch the sample for the dataloader
+        # sample = {"streetview": sample["streetview"][0], "simulated": sample["simulated"][0]}
 
         return sample
 
