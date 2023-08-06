@@ -1,6 +1,8 @@
 from matplotlib import pyplot as plt
-from matplotlib.axes import Axes
 from matplotlib.figure import Figure
+from matplotlib.axes import Axes
+from matplotlib.patches import Patch
+import matplotlib as mpl
 import numpy as np
 
 
@@ -24,52 +26,70 @@ def plot_sim(images: list[np.ndarray], pass_names: list[str], suptitle: str = No
     matplotlib.Figure
         the figure ready to be ploted
     """
-    if horizontal:
-        nrows = 1
-        ncols = len(images)
-    else:
-        nrows = len(images)
-        ncols = 1
-
-    axs: np.ndarray[Axes]
-    fig, axs = plt.subplots(nrows, ncols)
-    axs = axs.ravel()
+    fig, axs = get_fig_axs(dim_0=len(images), horizontal=horizontal)
 
     if suptitle is not None:
         fig.suptitle(suptitle)
 
     for i, image in enumerate(images):
-        # the image can have negative values
-        image = np.abs(image.astype("uint8"))
-        axs[i].imshow(image)
-        axs[i].set_title(pass_names[i])
-        axs[i].get_xaxis().set_visible(False)
-        axs[i].get_yaxis().set_visible(False)
+        show_rgb_image(axs[i], image, pass_names[i])
 
     return fig
 
 
 def plot_streetview_with_discrimination(streetview: np.ndarray, discrimination: np.ndarray, target: np.ndarray, suptitle: str = None, horizontal: bool = False):
-    if horizontal:
-        nrows = 1
-        ncols = 3
-    else:
-        nrows = 3
-        ncols = 1
-
-    axs: list[Axes]
-    fig, axs = plt.subplots(nrows, ncols)
-    axs = axs.ravel()
+    fig, axs = get_fig_axs(horizontal=horizontal)
 
     if suptitle is not None:
         fig.suptitle(suptitle)
 
-    imgs = {"generated\nstreetview": streetview, "associated\ndiscrimination": discrimination, "target": target}
-    for i, (name, image) in enumerate(imgs.items()):
-        image = np.abs(image.astype("uint8"))
-        axs[i].imshow(image)
-        axs[i].set_title(name)
-        axs[i].get_xaxis().set_visible(False)
-        axs[i].get_yaxis().set_visible(False)
+    show_rgb_image(axs[0], streetview, "Generated")
+    show_discrimination(axs[1], discrimination, "Discrimination")
+    show_rgb_image(axs[2], target, "Target")
 
     return fig
+
+
+def get_fig_axs(dim_0: int = 3, dim_1: int = 1, horizontal: bool = False):
+    if horizontal:
+        dim_0, dim_1 = dim_1, dim_0
+
+    axs: np.ndarray[Axes]
+    fig, axs = plt.subplots(dim_0, dim_1)
+    axs = axs.ravel()
+
+    return fig, axs
+
+
+def show_rgb_image(ax: Axes, image: np.ndarray, title: str = None):
+    ax.imshow(image)
+    ax.set_xlabel(title)
+    ax.xaxis.set_label_position('top')
+    remove_border(ax)
+
+
+def show_discrimination(ax: Axes, image: np.ndarray, title: str = None, display_legend: bool = False):
+    cmap = mpl.colormaps["viridis"]
+
+    ax.imshow(image, cmap=cmap, vmin=0, vmax=256)
+    ax.set_xlabel(title)
+    ax.xaxis.set_label_position('top')
+
+    if display_legend:
+        legend = (Patch(facecolor=cmap(0), label='Fake'),
+                  Patch(facecolor=cmap(256), label='Real'))
+        ax.legend(handles=legend, prop={"size": 6})
+
+    remove_border(ax)
+
+
+def remove_border(ax: Axes) -> Axes:
+    ax.spines['top'].set_visible(False)
+    ax.spines['bottom'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    ax.spines['left'].set_visible(False)
+
+    # remove ticks but let axis labels
+    ax.set_xticks([])
+    ax.set_yticks([])
+    return ax
