@@ -211,7 +211,7 @@ def get_simulated_image(simulated_dir: Path, image_id: int, render_passes: dict[
             raise ValueError(f"{img_path.suffix} as image file is not supported. Use npy, jpg or png.")
 
         if passname == "Depth":
-            img = transformation.Remap(0, img.max())(img)
+            img = transformation.Remap(0, img.max(), 0, 255)(img)
 
         if len(img.shape) == 2:
             nbr_channels.append(1)
