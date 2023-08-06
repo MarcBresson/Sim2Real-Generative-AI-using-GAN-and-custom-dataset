@@ -13,6 +13,7 @@ classifiers = [
 dependencies = [
     "pyproj",
     "tqdm",
+    "pyyaml",
     "pandas",
     "pyarrow",
     "matplotlib",
