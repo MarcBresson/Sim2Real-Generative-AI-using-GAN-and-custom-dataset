@@ -32,7 +32,6 @@ class CustomImageDataset(Dataset):
         blender_dir: Path,
         render_passes: dict[str, str] = None,
         transform=None,
-        to_device: torch.device = None
     ):
         self.annotations = pd.read_feather(annotations_file)
         self.render_passes = set_render_passes(render_passes, blender_dir)
@@ -41,8 +40,6 @@ class CustomImageDataset(Dataset):
         self.simulated_dir = blender_dir
 
         self.transform = transform
-
-        self.to_device = to_device
 
         self.filter_incomplete_rows()
         logging.info("the dataset has %s samples", len(self.annotations))
@@ -57,10 +54,6 @@ class CustomImageDataset(Dataset):
 
         if self.transform is not None:
             sample = self.transform_sample(sample)
-
-        if self.to_device is not None:
-            sample["streetview"].to(self.to_device)
-            sample["simulated"].to(self.to_device)
 
         return sample
 
