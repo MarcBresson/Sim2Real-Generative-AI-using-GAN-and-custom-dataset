@@ -139,7 +139,7 @@ class Equirec:
         grid = torch.stack((lon / 1024 - 1, lat / 512 - 1), dim=2)
         grid = grid.unsqueeze(0).repeat((self.batch_size, 1, 1, 1))  # we use the same grid for the whole batch
 
-        persp = torch.nn.functional.grid_sample(self.img_batch, grid)
+        persp = torch.nn.functional.grid_sample(self.img_batch, grid, align_corners=False)
 
         return persp
 
@@ -167,8 +167,8 @@ class Equirec:
         w_len = tan(radians(w_fov / 2.0))  # =1 for fov=90
         h_len = tan(radians(h_fov / 2.0))
 
-        width = int(self._width / 2 * w_len)
-        height = int(self._width / 2 * h_len)
+        width = int(self._height * w_fov / 180)
+        height = int(self._height * h_fov / 180)
 
         x_map = torch.ones([height, width], device=self.device)
         y_map = torch.tile(torch.linspace(-w_len, w_len, width, device=self.device), [height, 1])
