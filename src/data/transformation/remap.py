@@ -4,20 +4,6 @@ from torch import Tensor
 import numpy as np
 
 
-class NormalizeChannels():
-    def __init__(self) -> None:
-        self.remap = Remap(0, 255)
-
-    def __call__(self, imgs: Union[dict[str, Tensor], Tensor]) -> Union[dict[str, Tensor], Tensor]:
-        if isinstance(imgs, dict):
-            imgs["streetview"] = self.remap(imgs["streetview"])
-            imgs["simulated"] = self.remap(imgs["simulated"])
-        elif isinstance(imgs, Tensor):
-            imgs = self.remap(imgs)
-
-        return imgs
-
-
 class toNumpy():
     def __init__(self) -> None:
         self.remap = Remap(-1, 1, 0, 255)
