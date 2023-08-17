@@ -68,7 +68,7 @@ class Batch2Sample():
         if isinstance(input_, dict):
             if len(input_["streetview"].shape) == 4 and input_["streetview"].shape[0] == 1:
                 input_["streetview"] = input_["streetview"][0]
-            if len(input_["simulated"].shape) == 4 and input_["streetview"].shape[0] == 1:
+            if len(input_["simulated"].shape) == 4 and input_["simulated"].shape[0] == 1:
                 input_["simulated"] = input_["simulated"][0]
 
         elif isinstance(input_, Tensor):
