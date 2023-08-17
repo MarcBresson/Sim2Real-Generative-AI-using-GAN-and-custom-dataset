@@ -56,7 +56,21 @@ class CustomImageDataset(Dataset):
 
         return sample
 
-    def get_untransformed_sample(self, idx) -> dict[str, torch.Tensor]:
+    def get_untransformed_sample(self, idx: int) -> dict[str, torch.Tensor]:
+        """
+        get a raw sample from the dataset. Each time this function is called, the disk
+        is read two times: one for the simulated images, and one for the ground truth.
+
+        Parameters
+        ----------
+        idx : int
+            the position of the sample in the annotation file.
+
+        Returns
+        -------
+        dict[str, torch.Tensor]
+            the raw sample.
+        """
         image_id = self.annotations.iloc[idx]["image_id"]
 
         truth_img_path = self.streetview_dir / str(image_id)
@@ -69,12 +83,29 @@ class CustomImageDataset(Dataset):
 
         return sample
 
-    def transform_sample(self, sample):
+    def transform_sample(self, sample: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
+        """
+        Apply a transformation on a sample
+
+        Parameters
+        ----------
+        sample : dict[str, torch.Tensor]
+            the untransformed sample.
+
+        Returns
+        -------
+        dict[str, torch.Tensor]
+            the transformed sample
+
+        Raises
+        ------
+        ValueError
+            when this function is called but no transformation was given.
+        """
         if self.transform is None:
             raise ValueError("No transformation given. Use CustomImageDataset"
                              "(..., transform=transform), to allow transformation.")
 
-        # the transform operation converts single sample to a batched sample
         sample = self.transform(sample)
 
         return sample
@@ -107,6 +138,10 @@ class CustomImageDataset(Dataset):
                     len(self.annotations))
 
     def delete_incomplete_files(self):
+        """
+        if a row lacks at least one corresponding file on the disk, every related
+        files are deleted.
+        """
         simulated_ids = dir_to_img_ids(self.simulated_dir)
         streetview_ids = dir_to_img_ids(self.streetview_dir)
 
@@ -174,6 +209,28 @@ def delete_image(street_view_dir: Path, simulated_dir: Path, image_id: Union[str
 
 
 def get_simulated_image(simulated_dir: Path, image_id: int, pass_names: list[str], return_nbr_of_channels_per_pass: bool = False) -> Union[torch.Tensor, dict[str, int]]:
+    """
+    load a simulated image file from the disk.
+
+    Parameters
+    ----------
+    dir_ : Path
+        directory in which is the image
+    image_id : Union[int, str]
+        id of the image. It is used as the file name.
+    pass_names : list[str]
+        name of the passes to load. If none, will load all the passes
+        in the file.
+    return_nbr_of_channels_per_pass : bool, optional
+        if True, returns a dict that gives the number of channels for
+        each pass, by default False
+
+    Returns
+    -------
+    Union[torch.Tensor, dict[str, int]]
+        return the simulated image tensor or a dict that gives the number
+        of channels for each pass
+    """
     nbr_of_channels_per_pass = {}
     passes = []
 
@@ -205,6 +262,23 @@ def get_simulated_image(simulated_dir: Path, image_id: int, pass_names: list[str
 
 
 def construct_img_path(dir_: Path, image_id: Union[int, str], *, is_simulated: bool = False) -> Path:
+    """
+    build the path to an image.
+
+    Parameters
+    ----------
+    dir_ : Path
+        directory in which is the image
+    image_id : Union[int, str]
+        id of the image. It is used as the file name.
+    is_simulated : bool, optional
+        whether or not it will be a npz file or a jpg file, by default False
+
+    Returns
+    -------
+    Path
+        path to the image
+    """
     filepath = dir_ / str(image_id)
 
     if is_simulated:
