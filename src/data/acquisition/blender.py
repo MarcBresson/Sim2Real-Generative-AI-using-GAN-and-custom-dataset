@@ -1,14 +1,22 @@
 """
-TODO:
-- use viewernode for every pass
-- define a dict for each pass specifying : number of channels to keep
-- use PIL to save to PNG (https://pillow.readthedocs.io/en/stable/handbook/image-file-formats.html#png)
+Install OpenEXR on windows:
+    https://github.com/AcademySoftwareFoundation/openexr
+    ensure that it is in your program files ("C:\Program Files (x86)\OpenEXR\bin")
+    if not, change the value of line 13 accordingly
+
+Install python modules:
+    https://stackoverflow.com/questions/11161901/how-to-install-python-modules-in-blender
+    (installing the pip package of openexr will install Imath too)
 """
 
 from pathlib import Path
-from math import radians, sin, cos, log, atan, tan
+from math import radians, sin, cos, log, atan, tan, pi
+import os
+os.add_dll_directory(r"C:\Program Files (x86)\OpenEXR\bin")
 
-from numpy import deg2rad
+import OpenEXR
+import Imath
+import mathutils
 import pandas as pd
 import bpy
 import numpy as np
@@ -44,7 +52,11 @@ def read_data(dataset: Path):
     data = pd.read_feather(dataset)
 
     for _, row in data.iterrows():
-        yield row[["image_id", "lon", "lat", "computed_altitude", "computed_compass_angle"]]
+        data = row[["image_id", "lon", "lat", "computed_altitude"]]
+        angle_axis_rot = row[["rot_x", "rot_y", "rot_z"]]
+
+        data.append(angle_axis_rot)
+        yield data
 
 
 def create_camera(
@@ -77,63 +89,36 @@ def create_camera(
     bpy.context.scene.render.image_settings.file_format = 'JPEG'
 
 
-def mapillary_to_euler(compass_orientation: float) -> tuple[float, float, float]:
-    euler_rotation = [90, 0, -compass_orientation]
-
-    return deg2rad(euler_rotation)
-
-
-def create_nodes(tmp_dir: Path, render_pass_names: list[str], render_pass_options: list[dict]) -> list[str]:
+def mapillary_to_euler(angle_axis_rot: tuple[float, float, float]) -> tuple[float, float, float]:
     """
-    create the node tree to save each pass in a different folder.
+    convert the mapillary rotation vector to a blender rotation vector
 
     Parameters
     ----------
-    render_pass_names : list[str]
-        list of the render passes to save
+    angle_axis_rot : tuple[float, float, float]
+        angle axis rotation vector from mapillary
 
     Returns
     -------
-    list[str]
-        path to where the passes are saved.
+    tuple[float, float, float]
+        eularian rotation vector for blender
     """
-    tree = bpy.context.scene.node_tree
+    e = angle_axis_rot / np.linalg.norm(angle_axis_rot)
+    teta = np.linalg.norm(angle_axis_rot)
 
-    for node in tree.nodes:
-        tree.nodes.remove(node)
+    axis_angle_rot = mathutils.Matrix.Rotation(-teta, 3, e)
 
-    renderlayers_node = tree.nodes.new("CompositorNodeRLayers")
-    renderlayers_node.location = (0, 0)
-    renderlayers_node.name = "RenderLayers"
+    # this is to correctly align axis in blender according to https://opensfm.org/docs/cam_coord_system.html
+    camera_rotation = mathutils.Euler([0, pi, pi])
 
-    save_dirs = [""] * len(render_pass_names)
+    camera_rotation.rotate(axis_angle_rot)
 
-    for i, render_pass_name in enumerate(render_pass_names):
-        save_dirs[i] = tmp_dir / render_pass_name
-
-        render_pass = renderlayers_node.outputs[render_pass_name]
-
-        if "use_viewer" in render_pass_options[i]:
-            viewer_node = tree.nodes.new("CompositorNodeViewer")
-            output_node = viewer_node
-        else:
-            for key, value in render_pass_options[i].items():
-                setattr(bpy.context.scene.render.image_settings, key, value)
-            fileoutput_node = tree.nodes.new("CompositorNodeOutputFile")
-            fileoutput_node.location = (400, -120 * i)
-            fileoutput_node.name = render_pass_name
-
-            fileoutput_node.base_path = str(save_dirs[i])
-            output_node = fileoutput_node
-
-        tree.links.new(render_pass, output_node.inputs[0])
-
-    return save_dirs
+    return camera_rotation
 
 
 def place_camera(
     xyz: tuple[float, float, float],
-    computed_compass_angle: float,
+    angle_axis_rot: tuple[float, float, float],
     offset_altitude: float = 0.3
 ):
     """
@@ -141,7 +126,7 @@ def place_camera(
     ----------
     xyz : tuple[float, float, float]
         in meters
-    computed_compass_angle : float
+    angle_axis_rot : tuple[float, float, float]
         in degree
     offset_altitude : float
         move the z point up or down to account for streets not being at 0
@@ -150,30 +135,38 @@ def place_camera(
 
     x, y, z = xyz
     camera.location = (x, y, z + offset_altitude)
-    camera.rotation_euler = mapillary_to_euler(computed_compass_angle)
+    camera.rotation_euler = mapillary_to_euler(angle_axis_rot)
 
 
-def move_render_passes(save_dirs: list[Path], output_dir: Path):
-    image_id = output_dir.stem
+def exr_to_numpy(filepath, passdata: dict[str, dict]):
+    exrfile = OpenEXR.InputFile(filepath)
 
-    for dir_ in save_dirs:
-        pass_img_path: Path = list(dir_.glob("*.*"))[0]
-        pass_name = pass_img_path.parent.stem
-        pass_ext = pass_img_path.suffix
+    displaywindow = exrfile.header()['displayWindow']
+    height = displaywindow.max.y + 1 - displaywindow.min.y
+    width = displaywindow.max.x + 1 - displaywindow.min.x
 
-        new_filepath = output_dir.with_stem(f"{image_id}_{pass_name}").with_suffix(pass_ext)
-        new_filepath.unlink(missing_ok=True)
+    pass_arrays = {}
+    for passname, pass_data in passdata.items():
+        channel_names = [f"{passname}.{channel}" for channel in pass_data["channels"]]
 
-        pass_img_path.rename(new_filepath)
+        channels_raw: list[bytes]
+        channels_raw = exrfile.channels(channel_names, Imath.PixelType(Imath.PixelType.FLOAT))
 
+        channels = []
+        for channel in channels_raw:
+            # the type conversion must happen after the frombuffer loading in float32
+            channel_values = np.frombuffer(channel).astype(pass_data["dtype"])
 
-def save_viewernode(save_dir: Path):
-    viewer = np.array(bpy.data.images["Viewer Node"].pixels)
-    viewer = viewer[0::4].reshape((1024, 2048))  # remove duplicated channels
-    viewer = viewer[::-1, :]  # flip horizontally
-    viewer = viewer * (viewer < 1.0e+10)  # remove the sky
-    viewer = viewer.astype(np.float16)
-    np.savez_compressed(save_dir / "raw", viewer)
+            channel_values = np.reshape(channel_values, (height, width, -1))
+
+            channels.append(channel_values)
+
+        full_pass = np.concatenate(channels, 2)
+
+        pass_arrays[passname] = full_pass
+
+    return pass_arrays
+
 
 
 def image_exists(search_dir: Path, prefix: str, expected_length: int = 1):
@@ -183,34 +176,36 @@ def image_exists(search_dir: Path, prefix: str, expected_length: int = 1):
 
 
 def main():
-    render_pass_names = ["Depth", "Normal", "DiffCol"]
-    render_pass_options = [{"use_viewer": True}, {"file_format": "PNG", "color_depth": "8", "color_mode": "RGB"}, {"file_format": "PNG", "color_depth": "8", "color_mode": "RGB"}]
+    render_passes = {"Depth": {"channels": "V", "dtype": "float16"}, "Normal": {"channels": "XYZ", "dtype": "float16"}, "DiffCol": {"channels": "RGB", "dtype": "uint8"}}
 
     root_dir = Path(r"C:\Users\marco\Documents\Cours\Individual Research Project - IRP\code\data")
 
-    tmp_dir = root_dir / "tmp"
-    dataset_path = root_dir / "dataset.arrow"
-    savedir = root_dir / "blender"
+    dataset_path = root_dir / "annotations.arrow"
+    tmpdir = root_dir / "tmp"
+    savedir = root_dir / "ttt"
+    savedir.mkdir(exist_ok=True)
 
     create_camera()
-    save_dirs = create_nodes(tmp_dir, render_pass_names, render_pass_options)
 
     scene = bpy.context.scene
     projection = TransverseMercator(lat=scene["lat"], lon=scene["lon"])
 
     for streetview_data in read_data(dataset_path):
-        image_id, lon, lat, alt, computed_compass_angle = streetview_data
+        image_id, lon, lat, alt, angle_axis_rot = streetview_data
 
-        if image_exists(savedir, str(image_id) + "_", len(render_pass_names)):
+        if image_exists(savedir, str(image_id) + "_", len(render_passes)):
             continue
 
         x, y = projection.from_geographic(lat, lon)
-        place_camera((x, y, alt), computed_compass_angle)
+        place_camera((x, y, alt), angle_axis_rot)
 
         bpy.ops.render.render(write_still=True)
 
-        save_viewernode(save_dirs[0])
-        move_render_passes(save_dirs, savedir / str(image_id))
+        pass_arrays = exr_to_numpy(tmpdir / "tmp0001.exr", render_passes)
+
+        np.savez_compressed(savedir / str(image_id), **pass_arrays)
+
+        break
 
 
 main()
