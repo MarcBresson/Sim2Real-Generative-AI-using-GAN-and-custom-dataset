@@ -152,7 +152,7 @@ class CustomImageDataset(Dataset):
         """try to load every simulated images, and delete them if it fails."""
         index_to_drop = []
 
-        deletion_progression = tqdm(self.annotations.itertuples(), desc="deleting unloadable data", total=len(self.annotations))
+        deletion_progression = tqdm(self.annotations.itertuples(), desc="deleting unloadable data", total=len(self.annotations), miniters=int(len(self.annotations) / 100))
         for serie in deletion_progression:
             try:
                 get_simulated_image(self.simulated_dir, serie.image_id, self.render_passes)
