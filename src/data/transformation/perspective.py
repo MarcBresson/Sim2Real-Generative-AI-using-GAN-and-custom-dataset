@@ -42,6 +42,10 @@ class RandomPerspective():
         self.pitch = pitch
         self.w_fov = w_fov
 
+        self.last_yaw = None
+        self.last_pitch = None
+        self.last_w_fov = None
+
         self.device = device
 
     def __call__(self, equirec_imgs: dict[str, Tensor]) -> dict[str, Tensor]:
@@ -57,19 +61,14 @@ class RandomPerspective():
         if isinstance(w_fov, Sequence):
             w_fov = rng_range(self.w_fov[0], self.w_fov[1])
 
+        self.last_yaw = yaw
+        self.last_pitch = pitch
+        self.last_w_fov = w_fov
+
         if isinstance(equirec_imgs, dict):
-            equirec_imgs = self.concat_then_transform(equirec_imgs, yaw, pitch, w_fov)
+            equirec_imgs = self.transform(equirec_imgs, yaw, pitch, w_fov)
         elif isinstance(equirec_imgs, Tensor):
             equirec_imgs = self.transform_concatenated(equirec_imgs, yaw, pitch, w_fov)
-
-        return equirec_imgs
-
-    def concat_then_transform(self, equirec_imgs, yaw, pitch, w_fov):
-        """Concat the images then transform them to avoid redundant computation."""
-        concat_imgs = torch.concat((equirec_imgs["streetview"], equirec_imgs["simulated"]), dim=1)
-        perspective_imgs = self.transform_concatenated(concat_imgs, yaw, pitch, w_fov)
-        equirec_imgs["streetview"] = perspective_imgs[:, :3]
-        equirec_imgs["simulated"] = perspective_imgs[:, 3:]
 
         return equirec_imgs
 
@@ -83,8 +82,40 @@ class RandomPerspective():
         """transform a raw batch"""
         equirec_imgs["streetview"] = Equirec(equirec_imgs["streetview"], self.device).to_persp(yaw, pitch, w_fov)
         equirec_imgs["simulated"] = Equirec(equirec_imgs["simulated"], self.device).to_persp(yaw, pitch, w_fov)
+        equirec_imgs["has_nan"] = equirec_imgs["simulated"].isnan().any() or equirec_imgs["streetview"].isnan().any()
+        equirec_imgs["last_yaw"] = self.last_yaw
+        equirec_imgs["last_pitch"] = self.last_pitch
+        equirec_imgs["last_w_fov"] = self.last_w_fov
 
         return equirec_imgs
+
+    def __str__(self) -> str:
+        s = "("
+        if isinstance(self.yaw, Sequence):
+            s += f"yaw in [{self.yaw[0]}; {self.yaw[1]}] "
+        else:
+            s += f"yaw={self.yaw} "
+
+        if isinstance(self.pitch, Sequence):
+            s += f"pitch in [{self.pitch[0]}; {self.pitch[1]}] "
+        else:
+            s += f"pitch={self.pitch} "
+
+        if isinstance(self.w_fov, Sequence):
+            s += f"w_fov in [{self.w_fov[0]}; {self.w_fov[1]}]"
+        else:
+            s += f"w_fov={self.w_fov}"
+
+        s += ")"
+
+        if self.last_pitch is not None:
+            s += "; last transformation: ("
+            s += f"yaw={self.last_yaw}"
+            s += f"pitch={self.last_pitch}"
+            s += f"w_fov={self.last_w_fov}"
+            s += ")"
+
+        return s
 
 
 def rng_range(mmin: float, mmax: float):
