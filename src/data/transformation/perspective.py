@@ -19,7 +19,6 @@ class RandomPerspective():
         yaw: Union[float, tuple[float, float]],
         pitch: Union[float, tuple[float, float]],
         w_fov: Union[int, tuple[int, int]],
-        device: str = "cuda:0"
     ):
         """
         Parameters
@@ -45,8 +44,6 @@ class RandomPerspective():
         self.last_yaw = None
         self.last_pitch = None
         self.last_w_fov = None
-
-        self.device = device
 
     def __call__(self, equirec_imgs: dict[str, Tensor]) -> dict[str, Tensor]:
         yaw = self.yaw
@@ -79,14 +76,14 @@ class RandomPerspective():
 
     def transform_concatenated(self, concat_imgs, yaw, pitch, w_fov):
         """given already concatenated images, transform them."""
-        perspective_imgs = Equirec(concat_imgs, self.device).to_persp(yaw, pitch, w_fov)
+        perspective_imgs = Equirec(concat_imgs).to_persp(yaw, pitch, w_fov)
 
         return perspective_imgs
 
     def transform(self, equirec_imgs, yaw, pitch, w_fov):
         """transform a raw batch"""
-        equirec_imgs["streetview"] = Equirec(equirec_imgs["streetview"], self.device).to_persp(yaw, pitch, w_fov)
-        equirec_imgs["simulated"] = Equirec(equirec_imgs["simulated"], self.device).to_persp(yaw, pitch, w_fov)
+        equirec_imgs["streetview"] = Equirec(equirec_imgs["streetview"]).to_persp(yaw, pitch, w_fov)
+        equirec_imgs["simulated"] = Equirec(equirec_imgs["simulated"]).to_persp(yaw, pitch, w_fov)
         equirec_imgs["has_nan"] = equirec_imgs["simulated"].isnan().any() or equirec_imgs["streetview"].isnan().any()
         equirec_imgs["last_yaw"] = self.last_yaw
         equirec_imgs["last_pitch"] = self.last_pitch
@@ -129,7 +126,7 @@ def rng_range(mmin: float, mmax: float):
 
 
 class Equirec:
-    def __init__(self, img_batch: torch.Tensor, device: str = "cuda:0"):
+    def __init__(self, img_batch: torch.Tensor):
         """
         Parameters
         ----------
@@ -139,15 +136,13 @@ class Equirec:
                 - C is the number of channels in the images
                 - H is the height of the images
                 - W is the width of the images
-        device : str, optional
-            device to make the computation on, by default "cuda:0"
         """
         if len(img_batch.shape) != 4:
             raise ValueError(f"img_batch should be of dimension 4. Found {len(img_batch.shape)}."
                              "in case of single image, you can use `img.unsqueeze(0)`.")
-        self.device = device
+        self.device = img_batch.device
 
-        self.img_batch = img_batch.to(device)
+        self.img_batch = img_batch.to(self.device)
         self.batch_size = img_batch.shape[0]
 
         self._width = img_batch.shape[3]
