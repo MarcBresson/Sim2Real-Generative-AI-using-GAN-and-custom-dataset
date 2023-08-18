@@ -67,8 +67,13 @@ class RandomPerspective():
 
         if isinstance(equirec_imgs, dict):
             equirec_imgs = self.transform(equirec_imgs, yaw, pitch, w_fov)
+
         elif isinstance(equirec_imgs, Tensor):
             equirec_imgs = self.transform_concatenated(equirec_imgs, yaw, pitch, w_fov)
+
+        else:
+            raise TypeError(f"type {type(equirec_imgs)} is not supported. Please use a Tensor or a "
+                            "dict with keys `simulated` and `streetview`.")
 
         return equirec_imgs
 

@@ -46,6 +46,10 @@ class Sample2Batch():
             if len(input_.shape) == 3:
                 input_ = input_.unsqueeze(0)
 
+        else:
+            raise TypeError(f"type {type(input_)} is not supported. Please use a Tensor or a "
+                            "dict with keys `simulated` and `streetview`.")
+
         return input_
 
 
@@ -74,5 +78,9 @@ class Batch2Sample():
         elif isinstance(input_, Tensor):
             if len(input_.shape) == 4 and input_.shape[0] == 1:
                 input_ = input_[0]
+
+        else:
+            raise TypeError(f"type {type(input_)} is not supported. Please use a Tensor or a "
+                            "dict with keys `simulated` and `streetview`.")
 
         return input_

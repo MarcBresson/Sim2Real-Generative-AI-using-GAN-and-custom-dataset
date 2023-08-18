@@ -24,5 +24,8 @@ class RandomHorizontalFlip():
             imgs["simulated"] = self.transform(imgs["simulated"])
         elif isinstance(imgs, Tensor):
             imgs = self.transform(imgs)
+        else:
+            raise TypeError(f"type {type(imgs)} is not supported. Please use a Tensor or a "
+                            "dict with keys `simulated` and `streetview`.")
 
         return imgs

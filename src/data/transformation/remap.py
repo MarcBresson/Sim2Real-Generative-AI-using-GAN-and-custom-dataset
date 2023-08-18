@@ -39,7 +39,12 @@ class Remap():
         if isinstance(imgs, dict):
             imgs["streetview"] = (imgs["streetview"] - self.in_min) * scale_factor + self.out_min
             imgs["simulated"] = (imgs["simulated"] - self.in_min) * scale_factor + self.out_min
+
         elif isinstance(imgs, Tensor):
             imgs = (imgs - self.in_min) * scale_factor + self.out_min
+
+        else:
+            raise TypeError(f"type {type(imgs)} is not supported. Please use a Tensor or a "
+                            "dict with keys `simulated` and `streetview`.")
 
         return imgs

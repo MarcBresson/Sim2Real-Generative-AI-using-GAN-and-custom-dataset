@@ -15,7 +15,12 @@ class ToDevice():
         if isinstance(imgs, dict):
             imgs["streetview"] = imgs["streetview"].to(device=self.device)
             imgs["simulated"] = imgs["simulated"].to(device=self.device)
+
         elif isinstance(imgs, Tensor):
             imgs = imgs.to(device=self.device)
+
+        else:
+            raise TypeError(f"type {type(imgs)} is not supported. Please use a Tensor or a "
+                            "dict with keys `simulated` and `streetview`.")
 
         return imgs
