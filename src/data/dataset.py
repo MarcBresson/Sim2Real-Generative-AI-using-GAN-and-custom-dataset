@@ -77,7 +77,7 @@ class CustomImageDataset(Dataset):
         truth_img_path = truth_img_path.with_suffix(".jpg")
         truth_img = read_image(str(truth_img_path)).float()
 
-        simul_img, _ = get_simulated_image(self.simulated_dir, image_id, self.render_passes)
+        simul_img = get_simulated_image(self.simulated_dir, image_id, self.render_passes)
 
         sample = {"streetview": truth_img, "simulated": simul_img}
 
@@ -194,7 +194,7 @@ class CustomImageDataset(Dataset):
         image_id = self.annotations.iloc[0]["image_id"]
 
         channels_per_pass: dict
-        channels_per_pass = get_simulated_image(self.simulated_dir, image_id, self.render_passes)
+        channels_per_pass = get_simulated_image(self.simulated_dir, image_id, self.render_passes, return_nbr_of_channels_per_pass=True)
 
         self._passes_channel_nbr = channels_per_pass
 
@@ -245,15 +245,17 @@ def get_simulated_image(simulated_dir: Path, image_id: int, pass_names: list[str
 
         if passname == "Depth":
             img[img == np.inf] = 0
+            img = torch.from_numpy(img)
             img = transformation.Remap(0, img.max(), 0, 1)(img)
 
         passes.append(img)
         nbr_of_channels_per_pass[passname] = img.shape[2]
 
-    npz_file.close()
-
-    sim_image = np.concatenate(passes)
+    sim_image = np.concatenate(passes, 2)
+    sim_image = np.transpose(sim_image, (2, 0, 1))
     sim_image = torch.from_numpy(sim_image).float()
+
+    npz_file.close()
 
     if return_nbr_of_channels_per_pass:
         return nbr_of_channels_per_pass
@@ -282,9 +284,9 @@ def construct_img_path(dir_: Path, image_id: Union[int, str], *, is_simulated: b
     filepath = dir_ / str(image_id)
 
     if is_simulated:
-        filepath.with_suffix(".npz")
+        filepath = filepath.with_suffix(".npz")
     else:
-        filepath.with_suffix(".jpg")
+        filepath = filepath.with_suffix(".jpg")
 
     return filepath
 
