@@ -98,14 +98,13 @@ class RandomPerspective():
 
         if _retry < max_retry and self.persp_has_nan(persp_imgs):
             _retry += 1
-            self(equirec_imgs, max_retry=max_retry, retry=_retry)
+            return self(equirec_imgs, max_retry=max_retry, retry=_retry)
 
         if _retry == max_retry:
             logging.debug("Could not compute a non-corrupted perspective view.")
             return torch.empty(0)
 
         if _retry > 0:
-            print(_retry)
             logging.debug("Had to retry %s times to compute a perspective view.", _retry)
 
         return persp_imgs
