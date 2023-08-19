@@ -145,7 +145,7 @@ class RandomPerspective():
         persp_imgs["streetview"] = Equirec(equirec_imgs["streetview"]).to_persp(yaw, pitch, w_fov)
         persp_imgs["simulated"] = Equirec(equirec_imgs["simulated"]).to_persp(yaw, pitch, w_fov)
 
-        return equirec_imgs
+        return persp_imgs
 
     def persp_has_nan(self, persp_imgs: Union[Tensor, dict[str, Tensor]]) -> bool:
         """
