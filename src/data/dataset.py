@@ -8,8 +8,10 @@ https://pytorch.org/vision/main/transforms.html
 from typing import Union
 from pathlib import Path
 from collections import Counter
+import threading
 import logging
 import math
+import time
 
 from tqdm import tqdm
 import numpy as np
@@ -19,6 +21,7 @@ from torch.utils.data import Dataset, Subset, random_split
 from torchvision.io import read_image
 
 from src.data import transformation
+from src.data.acquisition.mapillary import download_image
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +33,11 @@ class CustomImageDataset(Dataset):
         streetview_dir: Path,
         blender_dir: Path,
         render_passes: dict[str, str] = None,
+        *,
         transform=None,
+        download_missing_mapillary: bool = False,
+        delete_unused_files: bool = False,
+        filter_incomplete_rows: bool = True,
     ):
         self.annotations = pd.read_feather(annotations_file)
         self.render_passes = render_passes
@@ -40,7 +47,12 @@ class CustomImageDataset(Dataset):
 
         self.transform = transform
 
-        self.filter_incomplete_rows()
+        if download_missing_mapillary:
+            self.download_missing_streetviews()
+        if delete_unused_files:
+            self.delete_unused_files()
+        if filter_incomplete_rows:
+            self.filter_incomplete_rows()
         logging.info("the dataset has %s samples", len(self.annotations))
 
         self.set_passes_channel_nbr()
@@ -75,7 +87,11 @@ class CustomImageDataset(Dataset):
 
         truth_img_path = self.streetview_dir / str(image_id)
         truth_img_path = truth_img_path.with_suffix(".jpg")
-        truth_img = read_image(str(truth_img_path)).float()
+
+        try:
+            truth_img = read_image(str(truth_img_path)).float()
+        except RuntimeError as exc:
+            raise RuntimeError(f"Image at {truth_img_path} could not be loaded.") from exc
 
         simul_img = get_simulated_image(self.simulated_dir, image_id, self.render_passes)
 
@@ -133,8 +149,8 @@ class CustomImageDataset(Dataset):
         self.annotations = self.annotations[self.annotations["image_id"].isin(valid_ids)]
 
         deleted_samples = before_deletion - len(self.annotations)
-        logger.info("dataset - droped %s element because they were missing at least"
-                    "one image. The dataset now has %s samples", deleted_samples,
+        logger.info("dataset - droped %s element because they were missing at least "
+                    "one image. The dataset now has %s samples.", deleted_samples,
                     len(self.annotations))
 
     def delete_incomplete_files(self):
@@ -164,25 +180,59 @@ class CustomImageDataset(Dataset):
 
         logger.info("dataset - removed %s samples because they did not form a complete set", len(to_remove_ids))
 
-    def delete_unloadable_data(self):
-        """try to load every simulated images, and delete them if it fails."""
-        index_to_drop = []
+    def delete_unloadable_files(self, streetviews_only: bool = True, simulated_only: bool = False):
+        """try to load every simulated and streetview images, and delete them if it fails."""
+        if streetviews_only and simulated_only:
+            raise ValueError("cannot be only streetviews and only simulated at the same time. "
+                             "To do both, set streetviews_only to `False`.")
 
-        deletion_progression = tqdm(self.annotations.itertuples(), desc="deleting unloadable data", total=len(self.annotations), miniters=int(len(self.annotations) / 100))
-        for serie in deletion_progression:
+        def attempt_loading_simulated(image_id):
             try:
-                get_simulated_image(self.simulated_dir, serie.image_id, self.render_passes)
+                get_simulated_image(self.simulated_dir, image_id, self.render_passes)
+                return True
             except (RuntimeError, ValueError):
                 # RuntimeError when file is empty
                 # ValueError when it was pickled
-                index_to_drop.append(serie.Index)
+                return False
 
-                delete_image(self.streetview_dir, self.simulated_dir, serie.image_id)
+        def attempt_loading_streetview(image_id):
+            try:
+                truth_img_path = self.streetview_dir / str(image_id)
+                truth_img_path = truth_img_path.with_suffix(".jpg")
+                read_image(str(truth_img_path)).float()
+                return True
+            except RuntimeError:
+                # RuntimeError when jpeg is corrupted
+                return False
 
-        self.annotations = self.annotations.drop(index=index_to_drop)
-        logger.info("dataset - droped %s element because the data could not be loaded."
-                    "The dataset now has %s samples", len(index_to_drop),
-                    len(self.annotations))
+        def check_image_id(image_id, count_element_removed: list):
+            if not simulated_only:
+                success_loading_streetview = attempt_loading_streetview(image_id)
+
+                if not success_loading_streetview:
+                    img_path = construct_img_path(self.streetview_dir, image_id, is_simulated=False)
+                    img_path.unlink()
+                    count_element_removed[0] += 1
+
+            if not streetviews_only:
+                success_loading_simulated = attempt_loading_simulated(image_id)
+
+                if not success_loading_simulated:
+                    img_path = construct_img_path(self.simulated_dir, image_id, is_simulated=True)
+                    img_path.unlink()
+                    count_element_removed[1] += 1
+
+        count_element_removed = [0, 0]
+
+        deletion_progression = tqdm(self.annotations.itertuples(), desc="deleting unloadable data", total=len(self.annotations))
+        for serie in deletion_progression:
+            time.sleep(0.2)  # throtlle down
+            threading.Thread(
+                target=check_image_id,
+                args=(serie.image_id, count_element_removed)
+            ).start()
+
+        logger.info("dataset - removed %s files because they could not be loaded.", sum(count_element_removed))
 
     @property
     def passes_channel_nbr(self):
