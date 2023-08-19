@@ -19,20 +19,20 @@ class RandomPerspective():
         self,
         yaw: Union[float, tuple[float, float]],
         pitch: Union[float, tuple[float, float]],
-        w_fov: Union[int, tuple[int, int]],
+        w_fov: Union[float, tuple[float, float]] = 90,
     ):
         """
         Parameters
         ----------
         yaw : float
             yaw angle (left/right angle) in degree, or range of allowed
-            yaw angles
+            yaw angles.
         pitch : float
             pitch angle (up/down angle) in degree, or range of allowed
-            pitch angles
-        w_fov : int, optional
+            pitch angles.
+        w_fov : float, optional
             horizontal Field Of View (FOV) angle in degree, or range of
-            allowed FOV angles
+            allowed FOV angles, by default 90.
         """
         assert isinstance(yaw, (int, float, Sequence))
         assert isinstance(pitch, (int, float, Sequence))
@@ -98,10 +98,10 @@ class RandomPerspective():
 
         if _retry < max_retry and self.persp_has_nan(persp_imgs):
             _retry += 1
-            return self(equirec_imgs, max_retry=max_retry, retry=_retry)
+            return self(equirec_imgs, max_retry=max_retry, _retry=_retry)
 
         if _retry == max_retry:
-            logging.debug("Could not compute a non-corrupted perspective view.")
+            logging.warn("Could not compute a non-corrupted perspective view.")
             return torch.empty(0)
 
         if _retry > 0:
@@ -162,10 +162,10 @@ class RandomPerspective():
             whether there are NaN values in the transformed perspective images.
         """
         if isinstance(persp_imgs, dict):
-            return persp_imgs["simulated"].isnan().any() or persp_imgs["streetview"].isnan().any()
+            return bool(persp_imgs["simulated"].isnan().any()) or bool(persp_imgs["streetview"].isnan().any())
 
         elif isinstance(persp_imgs, Tensor):
-            return persp_imgs.isnan().any()
+            return bool(persp_imgs.isnan().any())
 
         raise TypeError("Unknown error while checking for NaN values. The given type "
                         f"{type(persp_imgs)} was not suppose to be given.")
@@ -199,9 +199,24 @@ class RandomPerspective():
         return s
 
 
-def rng_range(mmin: float, mmax: float):
+def rng_range(mmin: float, mmax: float) -> float:
+    """
+    get a random tensor of size 1 in a range.
+
+    Parameters
+    ----------
+    mmin : float
+        start of the range.
+    mmax : float
+        end of the range.
+
+    Returns
+    -------
+    float
+        random number.
+    """
     rng = torch.rand(1) * (mmax - mmin) + mmin
-    return rng.tolist()[0]
+    return rng.item()
 
 
 class Equirec:
@@ -227,7 +242,7 @@ class Equirec:
         self._width = img_batch.shape[3]
         self._height = img_batch.shape[2]
 
-    def to_persp(self, yaw: float, pitch: float, w_fov: int = 90, aspect_ratio: float = 1) -> torch.Tensor:
+    def to_persp(self, yaw: float, pitch: float, w_fov: float = 90, aspect_ratio: float = 1) -> torch.Tensor:
         """
         Parameters
         ----------
@@ -235,7 +250,7 @@ class Equirec:
             yaw angle, in degree
         pitch : float
             pitch angle, in degree
-        w_fov : int, optional
+        w_fov : float, optional
             horizontal Field Of View, by default 90
         aspect_ratio : float, optional
             aspect ratio of the output image, by default 1
@@ -253,7 +268,7 @@ class Equirec:
 
         return persp
 
-    def compute_maps(self, yaw: float, pitch: float, w_fov: int = 90, h_fov: int = 90) -> tuple[torch.Tensor, torch.Tensor]:
+    def compute_maps(self, yaw: float, pitch: float, w_fov: float = 90, h_fov: float = 90) -> tuple[torch.Tensor, torch.Tensor]:
         """
         the first matrix indicates where to find the source x coordinate of a (x, y) point.
         the second matrix indicates where to find the source y coordinate of a (x, y) point.
@@ -264,9 +279,9 @@ class Equirec:
             yaw angle (left/right angle), in degree
         pitch : float
             pitch angle (up/down angle), in degree
-        w_fov : int, optional
+        w_fov : float, optional
             horizontal Field Of View, by default 90
-        h_fov : int, optional
+        h_fov : float, optional
             vertical Field Of View, by default 90
 
         Returns
@@ -287,7 +302,7 @@ class Equirec:
         distance: torch.Tensor = torch.sqrt(x_map**2 + y_map**2 + z_map**2)
         distance = distance.unsqueeze(2).repeat((1, 1, 3))
 
-        xyz: torch.Tensor = torch.stack((x_map, y_map, z_map), axis=2) / distance
+        xyz: torch.Tensor = torch.stack((x_map, y_map, z_map), dim=2) / distance
         xyz = xyz.reshape([height * width, 3]).T
 
         r1, r2 = rot_matrices(yaw, pitch, self.device)
@@ -312,7 +327,7 @@ class Equirec:
 
 # from https://github.com/facebookresearch/pytorch3d/blob/main/pytorch3d/transforms/rotation_conversions.py#L461
 
-def rot_matrices(yaw: float, pitch: float, device: str, inverse: bool = False) -> tuple[torch.Tensor, torch.Tensor]:
+def rot_matrices(yaw: float, pitch: float, device: torch.device, inverse: bool = False) -> tuple[torch.Tensor, torch.Tensor]:
     """return the two rotation matrices for a yaw and a pitch"""
     y_axis = torch.tensor([0.0, 1.0, 0.0], dtype=torch.float32, device=device)
     z_axis = torch.tensor([0.0, 0.0, radians(yaw)], dtype=torch.float32, device=device)
