@@ -153,7 +153,28 @@ class CustomImageDataset(Dataset):
                     "one image. The dataset now has %s samples.", deleted_samples,
                     len(self.annotations))
 
-    def delete_incomplete_files(self):
+    def download_missing_streetviews(self):
+        simulated_ids = dir_to_img_ids(self.simulated_dir)
+        streetview_ids = dir_to_img_ids(self.streetview_dir)
+
+        simulated_ids = np.array(simulated_ids)
+        streetview_ids = np.array(streetview_ids)
+
+        ids_to_download = np.setdiff1d(simulated_ids, streetview_ids)
+
+        if len(ids_to_download) > 0:
+            logging.info("%s street views to download.", len(ids_to_download))
+            rows_to_download = self.annotations[self.annotations["image_id"].isin(ids_to_download)]
+
+            for _, row in tqdm(rows_to_download.iterrows(), total=len(rows_to_download)):
+                img_id = row["image_id"]
+                url = row["thumb_2048_url"]
+                time.sleep(0.3)  # throttle down
+                download_image(self.streetview_dir, img_id, url, use_thread=True)
+        else:
+            logging.info("no street view to download.")
+
+    def delete_unused_files(self):
         """
         if a row lacks at least one corresponding file on the disk, every related
         files are deleted.
