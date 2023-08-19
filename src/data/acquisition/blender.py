@@ -1,8 +1,13 @@
 """
 Install OpenEXR on windows:
     https://github.com/AcademySoftwareFoundation/openexr
-    ensure that it is in your program files ("C:\Program Files (x86)\OpenEXR\bin")
-    if not, change the value of line 13 accordingly
+    to compile it, you will need:
+        cmake to compile
+        git to  automatically download Imath and zlib
+        Visual Studio with a SDK and compilation tools
+    follow this guide https://openexr.com/en/latest/install.html
+    at compile time, pass the argument -DCMAKE_INSTALL_PREFIX="C:/Program Files (x86)/OpenEXR/"
+    ensure that the files are in "C:/Program Files (x86)/OpenEXR/bin"
 
 Install python modules:
     https://stackoverflow.com/questions/11161901/how-to-install-python-modules-in-blender
@@ -52,8 +57,8 @@ def read_data(dataset: Path):
     data = pd.read_feather(dataset)
 
     for _, row in data.iterrows():
-        data = row[["image_id", "lon", "lat", "computed_altitude"]]
-        angle_axis_rot = row[["rot_x", "rot_y", "rot_z"]]
+        data = list(row[["image_id", "lon", "lat", "computed_altitude"]])
+        angle_axis_rot = list(row[["rot x", "rot y", "rot z"]])
 
         data.append(angle_axis_rot)
         yield data
@@ -85,8 +90,6 @@ def create_camera(
 
     bpy.context.scene.render.resolution_x = width
     bpy.context.scene.render.resolution_y = int(width / aspect_ratio)
-
-    bpy.context.scene.render.image_settings.file_format = 'JPEG'
 
 
 def mapillary_to_euler(angle_axis_rot: tuple[float, float, float]) -> tuple[float, float, float]:
@@ -139,7 +142,7 @@ def place_camera(
 
 
 def exr_to_numpy(filepath, passdata: dict[str, dict]):
-    exrfile = OpenEXR.InputFile(filepath)
+    exrfile = OpenEXR.InputFile(str(filepath))
 
     displaywindow = exrfile.header()['displayWindow']
     height = displaywindow.max.y + 1 - displaywindow.min.y
@@ -147,26 +150,50 @@ def exr_to_numpy(filepath, passdata: dict[str, dict]):
 
     pass_arrays = {}
     for passname, pass_data in passdata.items():
-        channel_names = [f"{passname}.{channel}" for channel in pass_data["channels"]]
+        full_pass = get_exr_pass(exrfile, passname, **pass_data)
 
-        channels_raw: list[bytes]
-        channels_raw = exrfile.channels(channel_names, Imath.PixelType(Imath.PixelType.FLOAT))
-
-        channels = []
-        for channel in channels_raw:
-            # the type conversion must happen after the frombuffer loading in float32
-            channel_values = np.frombuffer(channel).astype(pass_data["dtype"])
-
-            channel_values = np.reshape(channel_values, (height, width, -1))
-
-            channels.append(channel_values)
-
-        full_pass = np.concatenate(channels, 2)
+        full_pass = np.reshape(full_pass, (height, width, -1))
 
         pass_arrays[passname] = full_pass
 
     return pass_arrays
 
+
+def get_exr_pass(exr_file, passname: str, channels: str, dtype: str = "float16") -> np.ndarray:
+    """
+    extract value of a pass from an exr file.
+
+    Parameters
+    ----------
+    exr_file :
+        The exr file object
+    passname : str
+        name of the pass as written in the exr file.
+    channels : str
+        name of the channels for the pass. It consists of a string of
+        the following letters: V, X, Y, Z, R, G, B, A.
+    dtype : str, optional
+        dtype conversion for the channel, as float 32 may be unecessary,
+        by default "float16"
+
+    Returns
+    -------
+    np.ndarray
+        1D array representing the pass.
+    """
+    channel_names = [f"{passname}.{channel}" for channel in channels]
+
+    channels_raw: list[bytes]
+    channels_raw = exr_file.channels(channel_names, Imath.PixelType(Imath.PixelType.FLOAT))
+
+    channels = []
+    for channel in channels_raw:
+        # the type conversion must happen after the frombuffer loading in float32
+        channel_values = np.frombuffer(channel, dtype=np.float32).astype(dtype)
+
+        channels.append(channel_values)
+
+    return np.stack(channels, 1)
 
 
 def image_exists(search_dir: Path, prefix: str, expected_length: int = 1):
@@ -176,12 +203,11 @@ def image_exists(search_dir: Path, prefix: str, expected_length: int = 1):
 
 
 def main():
-    render_passes = {"Depth": {"channels": "V", "dtype": "float16"}, "Normal": {"channels": "XYZ", "dtype": "float16"}, "DiffCol": {"channels": "RGB", "dtype": "uint8"}}
+    render_passes = {"Depth": {"channels": "V", "dtype": "float16"}, "Normal": {"channels": "XYZ", "dtype": "float16"}, "DiffCol": {"channels": "RGB", "dtype": "float16"}}
 
     root_dir = Path(r"C:\Users\marco\Documents\Cours\Individual Research Project - IRP\code\data")
 
     dataset_path = root_dir / "annotations.arrow"
-    tmpdir = root_dir / "tmp"
     savedir = root_dir / "ttt"
     savedir.mkdir(exist_ok=True)
 
@@ -201,11 +227,9 @@ def main():
 
         bpy.ops.render.render(write_still=True)
 
-        pass_arrays = exr_to_numpy(tmpdir / "tmp0001.exr", render_passes)
+        pass_arrays = exr_to_numpy(root_dir / "tmp0001.exr", render_passes)
 
         np.savez_compressed(savedir / str(image_id), **pass_arrays)
-
-        break
 
 
 main()
