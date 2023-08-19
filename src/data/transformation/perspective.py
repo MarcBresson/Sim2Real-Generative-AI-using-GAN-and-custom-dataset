@@ -2,6 +2,7 @@
 from https://github.com/timy90022/Perspective-and-Equirectangular/blob/master/lib/Equirec2Perspec.py
 """
 from typing import Sequence, Union
+import logging
 
 from numpy import radians, tan
 import torch
@@ -45,7 +46,52 @@ class RandomPerspective():
         self.last_pitch = None
         self.last_w_fov = None
 
-    def __call__(self, equirec_imgs: dict[str, Tensor]) -> dict[str, Tensor]:
+    def __call__(
+            self,
+            equirec_imgs: Union[Tensor, dict[str, Tensor]],
+            *,
+            max_retry: int = 5,
+            retry: int = 0
+    ) -> dict[str, Tensor]:
+        yaw, pitch, w_fov = self.pick_parameters()
+        self.last_yaw = yaw
+        self.last_pitch = pitch
+        self.last_w_fov = w_fov
+
+        if isinstance(equirec_imgs, dict):
+            persp_imgs = self.transform(equirec_imgs, yaw, pitch, w_fov)
+
+        elif isinstance(equirec_imgs, Tensor):
+            persp_imgs = self.transform_concatenated(equirec_imgs, yaw, pitch, w_fov)
+
+        else:
+            raise TypeError(f"type {type(equirec_imgs)} is not supported. Please use a Tensor or a "
+                            "dict with keys `simulated` and `streetview`.")
+
+        if retry < max_retry and self.persp_has_nan(persp_imgs):
+            retry += 1
+            self(equirec_imgs, max_retry=max_retry, retry=retry)
+
+        if retry == max_retry:
+            logging.debug("Could not compute a non-corrupted perspective view.")
+            return None
+
+        if retry > 0:
+            print(retry)
+            logging.debug("Had to retry %s times to compute a perspective view.", retry)
+
+        return persp_imgs
+
+    def pick_parameters(self) -> tuple[float, float, float]:
+        """
+        pick a set of yaw, pitch and horizontal FOV that are in the
+        range given or that corresponds to the number given.
+
+        Returns
+        -------
+        tuple[float, float, float]
+            yaw, pitch, w_fov
+        """
         yaw = self.yaw
         if isinstance(yaw, Sequence):
             yaw = rng_range(self.yaw[0], self.yaw[1])
@@ -58,38 +104,44 @@ class RandomPerspective():
         if isinstance(w_fov, Sequence):
             w_fov = rng_range(self.w_fov[0], self.w_fov[1])
 
-        self.last_yaw = yaw
-        self.last_pitch = pitch
-        self.last_w_fov = w_fov
+        return yaw, pitch, w_fov
 
-        if isinstance(equirec_imgs, dict):
-            equirec_imgs = self.transform(equirec_imgs, yaw, pitch, w_fov)
-
-        elif isinstance(equirec_imgs, Tensor):
-            equirec_imgs = self.transform_concatenated(equirec_imgs, yaw, pitch, w_fov)
-
-        else:
-            raise TypeError(f"type {type(equirec_imgs)} is not supported. Please use a Tensor or a "
-                            "dict with keys `simulated` and `streetview`.")
-
-        return equirec_imgs
-
-    def transform_concatenated(self, concat_imgs, yaw, pitch, w_fov):
+    def transform_concatenated(self, concat_imgs: Tensor, yaw: float, pitch: float, w_fov: float):
         """given already concatenated images, transform them."""
-        perspective_imgs = Equirec(concat_imgs).to_persp(yaw, pitch, w_fov)
+        persp_imgs = Equirec(concat_imgs).to_persp(yaw, pitch, w_fov)
 
-        return perspective_imgs
+        return persp_imgs
 
-    def transform(self, equirec_imgs, yaw, pitch, w_fov):
+    def transform(self, equirec_imgs: dict[str, Tensor], yaw: float, pitch: float, w_fov: float) -> dict[str, Tensor]:
         """transform a raw batch"""
-        equirec_imgs["streetview"] = Equirec(equirec_imgs["streetview"]).to_persp(yaw, pitch, w_fov)
-        equirec_imgs["simulated"] = Equirec(equirec_imgs["simulated"]).to_persp(yaw, pitch, w_fov)
-        equirec_imgs["has_nan"] = equirec_imgs["simulated"].isnan().any() or equirec_imgs["streetview"].isnan().any()
-        equirec_imgs["last_yaw"] = self.last_yaw
-        equirec_imgs["last_pitch"] = self.last_pitch
-        equirec_imgs["last_w_fov"] = self.last_w_fov
+        persp_imgs = {}
+        persp_imgs["streetview"] = Equirec(equirec_imgs["streetview"]).to_persp(yaw, pitch, w_fov)
+        persp_imgs["simulated"] = Equirec(equirec_imgs["simulated"]).to_persp(yaw, pitch, w_fov)
 
         return equirec_imgs
+
+    def persp_has_nan(self, persp_imgs: Union[Tensor, dict[str, Tensor]]) -> bool:
+        """
+        check if the transformed perspective images has NaN values.
+
+        Parameters
+        ----------
+        persp_imgs : Union[Tensor, dict[str, Tensor]]
+            the transformed perspective images.
+
+        Returns
+        -------
+        bool
+            whether there are NaN values in the transformed perspective images.
+        """
+        if isinstance(persp_imgs, dict):
+            return persp_imgs["simulated"].isnan().any() or persp_imgs["streetview"].isnan().any()
+
+        elif isinstance(persp_imgs, Tensor):
+            return persp_imgs.isnan().any()
+
+        raise TypeError("Unknown error while checking for NaN values. The given type "
+                        f"{type(persp_imgs)} was not suppose to be given.")
 
     def __str__(self) -> str:
         s = "("
