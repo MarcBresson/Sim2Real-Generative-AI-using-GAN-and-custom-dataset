@@ -19,7 +19,7 @@ def batch_to_numpy(batch: Tensor) -> list[np.ndarray]:
     return np_images
 
 
-def multichannels_to_individuals(img: np.ndarray, passes_channels: list[int]) -> list[np.ndarray]:
+def multichannels_to_individuals(img: np.ndarray, passes_channels: dict[str, int]) -> list[np.ndarray]:
     """
     transform a multichannel image to individual, less than 3 channels
     images.
@@ -40,7 +40,7 @@ def multichannels_to_individuals(img: np.ndarray, passes_channels: list[int]) ->
     i_channel = 0
 
     individual_images = []
-    for pass_channels in passes_channels:
+    for _, pass_channels in passes_channels.items():
         individual_images.append(img[:, :, i_channel: i_channel + pass_channels])
 
         i_channel += pass_channels
