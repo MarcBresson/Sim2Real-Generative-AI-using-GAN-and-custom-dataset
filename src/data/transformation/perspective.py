@@ -50,9 +50,34 @@ class RandomPerspective():
             self,
             equirec_imgs: Union[Tensor, dict[str, Tensor]],
             *,
-            max_retry: int = 5,
-            retry: int = 0
-    ) -> dict[str, Tensor]:
+            max_retry: int = -1,
+            _retry: int = 0
+    ) -> Union[Tensor, dict[str, Tensor]]:
+        """
+        Transform a given batch with random parameters. In case of failure
+        to compute, will retry to transform with new parameters.
+
+        Parameters
+        ----------
+        equirec_imgs : Tensor | dict[str, Tensor]
+            The equirectangular batch to transform.
+        max_retry : int, optional
+            the maximum number of retry in case of NaN values being present
+            after the computation. 0 will disable retries, and -1 will give
+            unlimited retries, by default 5.
+        _retry : int, optional
+            the current retry count, not intended to be public, by default 0
+
+        Returns
+        -------
+        Tensor | dict[str, Tensor]
+            the perspective transformed batch.
+
+        Raises
+        ------
+        TypeError
+            if the wrong batch type is given.
+        """
         yaw, pitch, w_fov = self.pick_parameters()
         self.last_yaw = yaw
         self.last_pitch = pitch
@@ -68,17 +93,20 @@ class RandomPerspective():
             raise TypeError(f"type {type(equirec_imgs)} is not supported. Please use a Tensor or a "
                             "dict with keys `simulated` and `streetview`.")
 
-        if retry < max_retry and self.persp_has_nan(persp_imgs):
-            retry += 1
-            self(equirec_imgs, max_retry=max_retry, retry=retry)
+        if max_retry == -1:
+            max_retry = float("inf")
 
-        if retry == max_retry:
+        if _retry < max_retry and self.persp_has_nan(persp_imgs):
+            _retry += 1
+            self(equirec_imgs, max_retry=max_retry, retry=_retry)
+
+        if _retry == max_retry:
             logging.debug("Could not compute a non-corrupted perspective view.")
-            return None
+            return torch.empty(0)
 
-        if retry > 0:
-            print(retry)
-            logging.debug("Had to retry %s times to compute a perspective view.", retry)
+        if _retry > 0:
+            print(_retry)
+            logging.debug("Had to retry %s times to compute a perspective view.", _retry)
 
         return persp_imgs
 
@@ -113,7 +141,7 @@ class RandomPerspective():
         return persp_imgs
 
     def transform(self, equirec_imgs: dict[str, Tensor], yaw: float, pitch: float, w_fov: float) -> dict[str, Tensor]:
-        """transform a raw batch"""
+        """transform a dict batch"""
         persp_imgs = {}
         persp_imgs["streetview"] = Equirec(equirec_imgs["streetview"]).to_persp(yaw, pitch, w_fov)
         persp_imgs["simulated"] = Equirec(equirec_imgs["simulated"]).to_persp(yaw, pitch, w_fov)
