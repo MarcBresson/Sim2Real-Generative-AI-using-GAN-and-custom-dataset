@@ -21,7 +21,7 @@ from torch.utils.data import Dataset, Subset, random_split
 from torchvision.io import read_image
 
 from src.data import transformation
-from src.data.acquisition.mapillary import download_image
+from src.data.acquisition.utils import download_image
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +32,7 @@ class CustomImageDataset(Dataset):
         annotations_file: Path,
         streetview_dir: Path,
         blender_dir: Path,
-        render_passes: dict[str, str] = None,
+        render_passes: list[str] = None,
         *,
         transform=None,
         download_missing_mapillary: bool = False,
@@ -92,6 +92,7 @@ class CustomImageDataset(Dataset):
             truth_img = read_image(str(truth_img_path)).float()
         except RuntimeError as exc:
             raise RuntimeError(f"Image at {truth_img_path} could not be loaded.") from exc
+        truth_img = transformation.Remap(0, 255, 0, 1)(truth_img)
 
         simul_img = get_simulated_image(self.simulated_dir, image_id, self.render_passes)
 
