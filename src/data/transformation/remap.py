@@ -5,12 +5,7 @@ import numpy as np
 
 
 class toNumpy():
-    def __init__(self) -> None:
-        self.remap = Remap(-1, 1, 0, 255)
-
     def __call__(self, imgs: Tensor) -> np.ndarray:
-        imgs = self.remap(imgs)
-
         # remove autograd function and move to cpu
         imgs = imgs.detach().cpu()
 
@@ -21,7 +16,7 @@ class toNumpy():
             imgs_norm = imgs.permute(0, 2, 3, 1)
 
         # convert to numpy and to uint8
-        imgs_np = imgs_norm.numpy().astype(np.uint8)
+        imgs_np = imgs_norm.numpy().astype(np.float32)
 
         return imgs_np
 
