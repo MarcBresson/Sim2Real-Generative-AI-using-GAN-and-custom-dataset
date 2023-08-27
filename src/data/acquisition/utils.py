@@ -2,9 +2,26 @@ from typing import Union
 from pathlib import Path
 from pickle import UnpicklingError
 import logging
+import threading
 
+import requests
 from tqdm import tqdm
 import numpy as np
+
+
+def download_image(image_dir: Path, image_id: int, image_url: str, use_thread: bool = False):
+    """launch a request to download an image"""
+    def _thread(image_id: int, image_url: str):
+        image_path = image_dir / f"{image_id}.jpg"
+
+        with image_path.open("wb") as handler:
+            img = requests.get(image_url, stream=True).content
+            handler.write(img)
+
+    if use_thread:
+        threading.Thread(target=_thread, args=(image_id, image_url)).start()
+    else:
+        _thread(image_id, image_url)
 
 
 def load_compressed_array(file: Union[str, Path]) -> np.ndarray:

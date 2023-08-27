@@ -1,12 +1,13 @@
 from pathlib import Path
 import threading
-import time
 
 from tqdm import tqdm
 import requests
 import pandas
 import mercantile
 from vt2geojson.tools import vt_bytes_to_geojson
+
+from src.data.acquisition.utils import download_image
 
 
 north =            48.9219
@@ -55,21 +56,6 @@ def download_image_data(
 
         image_url = image_data['thumb_2048_url']
         download_image(image_dir, image_id, image_url)
-
-
-def download_image(image_dir: Path, image_id: int, image_url: str, use_thread: bool = False):
-    """launch a request to download an image"""
-    def _thread(image_id: int, image_url: str):
-        image_path = image_dir / f"{image_id}.jpg"
-
-        with image_path.open("wb") as handler:
-            img = requests.get(image_url, stream=True).content
-            handler.write(img)
-
-    if use_thread:
-        threading.Thread(target=_thread, args=(image_id, image_url)).start()
-    else:
-        _thread(image_id, image_url)
 
 
 def inside_bbox(lon_lat, west_south_east_north) -> bool:
