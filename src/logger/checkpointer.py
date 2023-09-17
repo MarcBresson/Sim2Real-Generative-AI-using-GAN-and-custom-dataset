@@ -16,5 +16,7 @@ class Checkpointer:
         self.period = period
 
     def step(self, iteration: int, prefix: str = "iteration"):
+        self.model.save(self.save_dir, f"latest_{prefix}")
+
         if iteration % self.period == 0:
             self.model.save(self.save_dir, f"{iteration}_{prefix}")
