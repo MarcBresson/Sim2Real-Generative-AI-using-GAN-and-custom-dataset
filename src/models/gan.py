@@ -1,3 +1,4 @@
+from typing import Any, Union
 from pathlib import Path
 
 import torch
@@ -5,61 +6,111 @@ from torch import Tensor
 from torch import nn
 
 from src.models.discriminator_patchgan import PatchGAN
-from src.models.generator_unet import UnetGenerator
-from src.eval.gan_loss import BCEWithLogitsLoss
+from src.models.generator_spade import SPADEGenerator
+from src.eval.gan_loss import HingeLoss, BCEWithLogitsLoss
 
 
 class GAN(nn.Module):
-    def __init__(self, *args, **kwargs) -> None:
-        super().__init__(*args, **kwargs)
+    def __init__(
+        self,
+        dtype: Union[torch.dtype, str] = "float32",
+        input_channels: int = 7,
+        output_channels: int = 3,
+        device: torch.device = torch.device("cuda:0"),
+        generator_kwargs: Union[dict[str, Any], None] = None,
+        discriminator_kwargs: Union[dict[str, Any], None] = None
+    ) -> None:
+        super().__init__()
 
-        self.gen_Sim2Strtview = UnetGenerator(7, 3, num_downs=8, ngf=64, lr=2e-4)
-        self.discriminator_Strtview = PatchGAN(3)
+        if isinstance(dtype, str):
+            _dtype: torch.dtype = getattr(torch, dtype)
 
-        self.fooling_loss = BCEWithLogitsLoss()
+        if generator_kwargs is None:
+            generator_kwargs = {}
+        if discriminator_kwargs is None:
+            discriminator_kwargs = {}
+
+        self.generator = SPADEGenerator(input_channels, output_channels, device=device, dtype=_dtype, **generator_kwargs)
+        self.discriminator = PatchGAN(input_channels, output_channels, device=device, dtype=_dtype, **discriminator_kwargs)
+
+        self.fooling_loss = HingeLoss()
         self.gen_loss = nn.L1Loss()
+
+        self.init_loss_values()
+
+    def init_loss_values(self):
+        self.loss_values: dict[str, Any] = {}
+        self.loss_values["generator"] = {}
+        self.loss_values["discriminator"] = {}
 
     def set_input(self, sample: dict[str, Tensor]):
         self.real_streetviews = sample["streetview"]
         self.real_simulated = sample["simulated"]
 
-    def forward(self, train: bool = True) -> tuple[Tensor, Tensor, Tensor, Tensor]:
-        if train:
-            self.gen_Sim2Strtview.train()
-        else:
-            self.gen_Sim2Strtview.eval()
+    def forward(self):
+        self.forward_G()
 
-        self.gen_streetviews = self.gen_Sim2Strtview(self.real_simulated)
+    def forward_G(self):
+        self.fake_streetviews: Tensor = self.generator(self.real_simulated)
 
-    def compute_generator_loss(self):
-        self.discriminator_Strtview.eval()
+    def forward_D(self):
+        self.discriminated_strt_real = self.discriminator(self.real_streetviews)
+        self.discriminated_strt_fake = self.discriminator(self.fake_streetviews.detach())
 
+    def backward_G(self, only_compute_loss: bool = False):
         # we want to optimize the generator so that the discriminator is wrong more often.
         # we compute the loss with a target being the opposite of what we expect.
-        self.loss_fooling_discrim_strtview = self.fooling_loss(self.discriminator_Strtview(self.gen_streetviews), True)
+        discriminated_fake = self.discriminator(self.fake_streetviews)
+        fooling_loss_value = self.fooling_loss(discriminated_fake, True)
 
-        self.loss_gen_strtview = self.gen_loss(self.gen_streetviews, self.real_streetviews)
+        gen_loss_value = self.gen_loss(self.fake_streetviews, self.real_streetviews)
 
-        self.generator_loss_value = self.loss_fooling_discrim_strtview + self.loss_gen_strtview
+        loss_value: Tensor = (gen_loss_value + fooling_loss_value)
+
+        if not only_compute_loss:
+            loss_value.backward()
+
+        self.loss_values["generator"]["fooling_loss_value"] = fooling_loss_value
+        self.loss_values["generator"]["gen_loss_value"] = gen_loss_value
+        self.loss_values["generator"]["loss_value"] = loss_value
+
+    def backward_D(self, only_compute_loss: bool = False):
+        loss_real_value = self.fooling_loss(self.discriminated_strt_real, True)
+        loss_gen_value = self.fooling_loss(self.discriminated_strt_fake, False)
+        loss_value = (loss_gen_value + loss_real_value) * 0.5
+
+        if not only_compute_loss:
+            loss_value.backward()
+
+        self.loss_values["discriminator"]["loss_real_value"] = loss_real_value
+        self.loss_values["discriminator"]["loss_gen_value"] = loss_gen_value
+        self.loss_values["discriminator"]["loss_value"] = loss_value
 
     def fit_sample(self, sample: dict[str, Tensor]):
+        self.train()
+
         self.set_input(sample)
 
-        self.gen_Sim2Strtview.optimizer.zero_grad()
-        self.forward()
-        self.compute_generator_loss()
-        self.generator_loss_value.backward()
-        self.gen_Sim2Strtview.optimizer.step()
+        self.generator.optimizer.zero_grad()
+        self.forward_G()
+        self.backward_G()
+        self.generator.optimizer.step()
 
-        self.discriminator_Strtview.fit(self.real_streetviews, self.gen_streetviews)
+        self.discriminator.optimizer.zero_grad()
+        self.forward_D()
+        self.backward_D()
+        self.discriminator.optimizer.step()
 
     def test(self, sample: dict[str, Tensor]):
+        self.eval()
+
         self.set_input(sample)
-        self.forward(train=False)
 
-        self.compute_generator_loss()
+        self.forward_G()
+        self.backward_G(True)
 
-        self.discriminator_Strtview.test(self.real_streetviews, self.gen_streetviews)
+        self.forward_D()
+        self.backward_D(True)
 
-    def save(self, dir: Path, prefix: str):
-        torch.save(self.state_dict(), dir / f"GAN_{prefix}.pth")
+    def save(self, save_dir: Path, prefix: str):
+        torch.save(self.state_dict(), save_dir / f"GAN_{prefix}.pth")

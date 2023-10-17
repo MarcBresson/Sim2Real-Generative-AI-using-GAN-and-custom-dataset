@@ -1,35 +1,59 @@
 import torch
-from torch import nn, device as Device
+from torch import nn
 
 
 class UnetGenerator(nn.Module):
-    def __init__(self, input_nc, output_nc, num_downs, ngf=64,
-                 norm_layer=nn.BatchNorm2d, use_dropout=False, lr: float = 1e-3,
-                 device: Device = Device("cuda:0")):
+    def __init__(
+        self,
+        input_nc: int,
+        output_nc: int,
+        n_levels: int = 7,
+        n_filters: int = 64,
+        norm_layer=nn.BatchNorm2d,
+        use_dropout: bool = False,
+        lr: float = 1e-3,
+        beta1: float = 0.5,
+        beta2: float = 0.999,
+        device: torch.device = torch.device("cuda:0"),
+        dtype: torch.dtype = torch.float32
+    ):
         super().__init__()
 
+        lr = float(lr)
+        beta1 = float(beta1)
+        beta2 = float(beta2)
+
         # construct unet structure
-        unet_block = UnetSkipConnectionBlock(ngf * 8, ngf * 8, norm_layer=norm_layer, innermost=True)
-        for _ in range(num_downs - 5):
-            unet_block = UnetSkipConnectionBlock(ngf * 8, ngf * 8, submodule=unet_block, norm_layer=norm_layer, use_dropout=use_dropout)
-        unet_block = UnetSkipConnectionBlock(ngf * 4, ngf * 8, submodule=unet_block, norm_layer=norm_layer)
-        unet_block = UnetSkipConnectionBlock(ngf * 2, ngf * 4, submodule=unet_block, norm_layer=norm_layer)
-        unet_block = UnetSkipConnectionBlock(ngf, ngf * 2, submodule=unet_block, norm_layer=norm_layer)
-        unet_block = UnetSkipConnectionBlock(output_nc, ngf, input_nc=input_nc, submodule=unet_block, outermost=True, norm_layer=norm_layer)
+        unet_block = UnetSkipConnectionBlock(n_filters * 8, n_filters * 8, norm_layer=norm_layer, innermost=True)
+        for _ in range(n_levels - 5):
+            unet_block = UnetSkipConnectionBlock(n_filters * 8, n_filters * 8, submodule=unet_block, norm_layer=norm_layer, use_dropout=use_dropout)
+        unet_block = UnetSkipConnectionBlock(n_filters * 4, n_filters * 8, submodule=unet_block, norm_layer=norm_layer)
+        unet_block = UnetSkipConnectionBlock(n_filters * 2, n_filters * 4, submodule=unet_block, norm_layer=norm_layer)
+        unet_block = UnetSkipConnectionBlock(n_filters, n_filters * 2, submodule=unet_block, norm_layer=norm_layer)
+        unet_block = UnetSkipConnectionBlock(output_nc, n_filters, input_nc=input_nc, submodule=unet_block, outermost=True, norm_layer=norm_layer)
 
         self.model = unet_block
-        self.model.to(device)
+        self.model.to(device=device, dtype=dtype)
 
         # https://machinelearningmastery.com/adam-optimization-algorithm-for-deep-learning/
-        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=lr, betas=(0.5, 0.999))
+        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=lr, betas=(beta1, beta2))
 
-    def forward(self, input):
-        return self.model(input)
+    def forward(self, _input):
+        return self.model(_input)
 
 
 class UnetSkipConnectionBlock(nn.Module):
-    def __init__(self, outer_nc, inner_nc, input_nc=None,
-                 submodule=None, outermost=False, innermost=False, norm_layer=nn.BatchNorm2d, use_dropout=False):
+    def __init__(
+        self,
+        outer_nc,
+        inner_nc,
+        input_nc=None,
+        submodule=None,
+        outermost=False,
+        innermost=False,
+        norm_layer=nn.BatchNorm2d,
+        use_dropout=False,
+    ):
         super().__init__()
         self.outermost = outermost
         use_bias = norm_layer == nn.InstanceNorm2d
@@ -70,8 +94,8 @@ class UnetSkipConnectionBlock(nn.Module):
 
         self.model = nn.Sequential(*model)
 
-    def forward(self, x):
+    def forward(self, _input):
         if self.outermost:
-            return self.model(x)
-        else:
-            return torch.cat([x, self.model(x)], 1)
+            return self.model(_input)
+
+        return torch.cat([_input, self.model(_input)], 1)

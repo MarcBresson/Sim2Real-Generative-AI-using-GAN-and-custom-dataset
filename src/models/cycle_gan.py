@@ -1,3 +1,4 @@
+from typing import Any, Union
 from pathlib import Path
 
 import torch
@@ -5,76 +6,138 @@ from torch import Tensor
 from torch import nn
 
 from src.models.discriminator_patchgan import PatchGAN
-from src.models.generator_unet import UnetGenerator
+from src.models.generator_spade import SPADEGenerator
 from src.eval.gan_loss import BCEWithLogitsLoss
 
 
 class CycleGAN(nn.Module):
-    def __init__(self, *args, **kwargs) -> None:
-        super().__init__(*args, **kwargs)
+    def __init__(
+        self,
+        dtype: Union[torch.dtype, str] = "float32",
+        input_channels: int = 7,
+        output_channels: int = 3,
+        device: torch.device = torch.device("cuda:0"),
+        generator_kwargs: Union[dict[str, Any], None] = None,
+        discriminator_kwargs: Union[dict[str, Any], None] = None
+    ) -> None:
+        super().__init__()
 
-        self.gen_Sim2Strtview = UnetGenerator(7, 3, num_downs=7, lr=1e-2)
-        self.gen_Strtview2Sim = UnetGenerator(3, 7, num_downs=7, lr=1e-2)
-        self.discriminator_Sim = PatchGAN(7)
-        self.discriminator_Strtview = PatchGAN(3)
+        if isinstance(dtype, str):
+            dtype: torch.dtype = getattr(torch, dtype)
+
+        if generator_kwargs is None:
+            generator_kwargs = {}
+        if discriminator_kwargs is None:
+            discriminator_kwargs = {}
+
+        self.generator_strt = SPADEGenerator(input_channels, output_channels, device=device, dtype=dtype, **generator_kwargs)
+        self.generator_simu = SPADEGenerator(output_channels, input_channels, device=device, dtype=dtype, **generator_kwargs)
+        self.discriminator_strt = PatchGAN(input_channels, output_channels, device=device, dtype=dtype, **discriminator_kwargs)
+        self.discriminator_simu = PatchGAN(output_channels, input_channels, device=device, dtype=dtype, **discriminator_kwargs)
 
         self.fooling_loss = BCEWithLogitsLoss()
         self.cycle_loss = nn.L1Loss()
+
+        self.init_loss_values()
+
+    def init_loss_values(self):
+        self.loss_values: dict[str, Any] = {}
+        self.loss_values["generator"] = {}
+        self.loss_values["discriminator"] = {}
 
     def set_input(self, sample: dict[str, Tensor]):
         self.real_streetviews = sample["streetview"]
         self.real_simulated = sample["simulated"]
 
-    def forward(self, train: bool = True) -> tuple[Tensor, Tensor, Tensor, Tensor]:
-        if train:
-            self.gen_Sim2Strtview.train()
-            self.gen_Strtview2Sim.train()
-        else:
-            self.gen_Sim2Strtview.eval()
-            self.gen_Strtview2Sim.eval()
+    def forward(self):
+        self.forward_G()
 
-        self.gen_streetviews = self.gen_Sim2Strtview(self.real_simulated)
-        self.gen_simulated = self.gen_Strtview2Sim(self.real_streetviews)
+    def forward_G(self):
+        self.fake_streetviews = self.generator_strt(self.real_simulated)
+        self.fake_simulated = self.generator_simu(self.real_streetviews)
 
-        self.cycled_simulated = self.gen_Strtview2Sim(self.gen_streetviews)
-        self.cycled_streetviews = self.gen_Sim2Strtview(self.gen_simulated)
+        self.cycled_streetviews = self.generator_strt(self.fake_simulated)
+        self.cycled_simulated = self.generator_simu(self.fake_streetviews)
 
-    def compute_generators_loss(self):
-        self.discriminator_Sim.eval()
-        self.discriminator_Strtview.eval()
+    def forward_D(self):
+        self.discriminated_strt_real = self.discriminator_strt(self.real_streetviews)
+        self.discriminated_strt_fake = self.discriminator_strt(self.fake_streetviews.detach())
 
+        self.discriminated_simu_real = self.discriminator_simu(self.real_simulated)
+        self.discriminated_simu_fake = self.discriminator_simu(self.fake_simulated.detach())
+
+    def backward_G(self, only_compute_loss: bool = False):
         # we want to optimize the generator so that the discriminator is wrong more often.
         # we compute the loss with a target being the opposite of what we expect.
-        loss_fooling_discrim_strtview = self.fooling_loss(self.discriminator_Strtview(self.gen_streetviews), True)
-        loss_fooling_discrim_sim = self.fooling_loss(self.discriminator_Sim(self.gen_simulated), True)
+        discriminated_strt_fake = self.discriminator_strt(self.fake_streetviews)
+        fooling_strt_loss_value = self.fooling_loss(discriminated_strt_fake, True)
 
-        loss_cycle_strtview = self.cycle_loss(self.cycled_streetviews, self.real_streetviews)
-        loss_cycle_sim = self.cycle_loss(self.cycled_simulated, self.real_simulated)
+        discriminated_simu_fake = self.discriminator_simu(self.fake_simulated)
+        fooling_simu_loss_value = self.fooling_loss(discriminated_simu_fake, True)
 
-        self.loss_value = loss_fooling_discrim_strtview + loss_fooling_discrim_sim + loss_cycle_strtview + loss_cycle_sim
+        cycled_strt_loss_value = self.cycle_loss(self.cycled_streetviews, self.real_streetviews)
+        cycled_simu_loss_value = self.cycle_loss(self.cycled_simulated, self.real_simulated)
+
+        loss_value: Tensor = (fooling_strt_loss_value + fooling_simu_loss_value + cycled_strt_loss_value + cycled_simu_loss_value)
+
+        if not only_compute_loss:
+            loss_value.backward()
+
+        self.loss_values["generator"]["fooling_strt_loss_value"] = fooling_strt_loss_value
+        self.loss_values["generator"]["fooling_simu_loss_value"] = fooling_simu_loss_value
+        self.loss_values["generator"]["cycled_strt_loss_value"] = cycled_strt_loss_value
+        self.loss_values["generator"]["cycled_simu_loss_value"] = cycled_simu_loss_value
+        self.loss_values["generator"]["loss_value"] = loss_value
+
+    def backward_D(self, only_compute_loss: bool = False):
+        loss_real_strt_value = self.fooling_loss(self.discriminated_strt_real, True)
+        loss_gen_strt_value = self.fooling_loss(self.discriminated_strt_fake, False)
+        loss_strt_value = (loss_real_strt_value + loss_gen_strt_value) * 0.5
+
+        loss_real_simu_value = self.fooling_loss(self.discriminated_simu_real, True)
+        loss_gen_simu_value = self.fooling_loss(self.discriminated_simu_fake, False)
+        loss_simu_value = (loss_real_simu_value + loss_gen_simu_value) * 0.5
+
+        if not only_compute_loss:
+            loss_strt_value.backward()
+            loss_simu_value.backward()
+
+        self.loss_values["discriminator"]["loss_real_strt_value"] = loss_real_strt_value
+        self.loss_values["discriminator"]["loss_gen_strt_value"] = loss_gen_strt_value
+        self.loss_values["discriminator"]["loss_strt_value"] = loss_strt_value
+        self.loss_values["discriminator"]["loss_real_simu_value"] = loss_real_simu_value
+        self.loss_values["discriminator"]["loss_gen_simu_value"] = loss_gen_simu_value
+        self.loss_values["discriminator"]["loss_simu_value"] = loss_simu_value
 
     def fit_sample(self, sample: dict[str, Tensor]):
+        self.train()
+
         self.set_input(sample)
-        self.forward()
 
-        self.gen_Sim2Strtview.optimizer.zero_grad()
-        self.gen_Strtview2Sim.optimizer.zero_grad()
-        self.compute_generators_loss()
-        self.loss_value.backward(retain_graph=True)
-        self.gen_Sim2Strtview.optimizer.step()
-        self.gen_Strtview2Sim.optimizer.step()
+        self.generator_strt.optimizer.zero_grad()
+        self.generator_simu.optimizer.zero_grad()
+        self.forward_G()
+        self.backward_G()
+        self.generator_strt.optimizer.step()
+        self.generator_simu.optimizer.step()
 
-        self.discriminator_Strtview.fit(self.real_streetviews, self.gen_streetviews)
-        self.discriminator_Sim.fit(self.real_simulated, self.gen_simulated)
+        self.discriminator_strt.optimizer.zero_grad()
+        self.discriminator_simu.optimizer.zero_grad()
+        self.forward_D()
+        self.backward_D()
+        self.discriminator_strt.optimizer.step()
+        self.discriminator_simu.optimizer.step()
 
     def test(self, sample: dict[str, Tensor]):
+        self.eval()
+
         self.set_input(sample)
-        self.forward(train=False)
 
-        self.compute_generators_loss()
+        self.forward_G()
+        self.backward_G(True)
 
-        self.discriminator_Strtview.test(self.real_streetviews, self.gen_streetviews)
-        self.discriminator_Sim.test(self.real_simulated, self.gen_simulated)
+        self.forward_D()
+        self.backward_D(True)
 
-    def save(self, dir: Path, prefix: str):
-        torch.save(self.state_dict(), dir / f"cycleGAN_{prefix}.pth")
+    def save(self, save_dir: Path, prefix: str):
+        torch.save(self.state_dict(), save_dir / f"GAN_{prefix}.pth")
