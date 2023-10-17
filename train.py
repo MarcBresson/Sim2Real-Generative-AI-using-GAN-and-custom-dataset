@@ -1,128 +1,191 @@
-from pathlib import Path
 import logging
-logging.getLogger().setLevel(logging.INFO)
+from pathlib import Path
 
-from matplotlib import pyplot as plt
+from pyinstrument import Profiler
+from pyinstrument.renderers import HTMLRenderer
+import yaml
 from tqdm import tqdm
-from torch.utils.data import DataLoader
+import torch
+from torch.utils.data import DataLoader, Dataset, Subset
 from torchvision.transforms import Compose
-from torch.nn import L1Loss
-from ignite.metrics import SSIM, Loss, Average
+from ignite.metrics import SSIM
+from matplotlib import pyplot as plt
 
 from src.logger import Checkpointer, MetricLogger
-from src.models import GAN, init_weights
+from src.models import GAN, CycleGAN, init_weights
 from src.data import CustomImageDataset, dataset_split
 from src.data import transformation
 from src.data.visualisation import batch_to_numpy, plot_streetview_with_discrimination, plot_sim, multichannels_to_individuals
 
-data_path = Path("data")
-
-annotations_file = data_path / Path(r"annotations.arrow")
-streetview_dir = data_path / Path(r"mapillary")
-simulated_dir = data_path / Path(r"blender")
-checkpoints_dir = data_path / Path(r"checkpoints")
-viz_dir = data_path / Path(r"visualisation")
-
-NUMBER_OF_EPOCHS = 1000
-BATCH_SIZE = 16
-
-dataset = CustomImageDataset(
-    annotations_file,
-    streetview_dir,
-    simulated_dir
-)
+logging.getLogger().setLevel(logging.INFO)
 
 
-dataset_train, dataset_val, dataset_viz = dataset_split(dataset, [10000, 2000, 5])
+def train(dataloader_train: DataLoader, batch_transform, model: GAN, metric_logger: MetricLogger):
+    for _, batch in enumerate(dataloader_train):
+        batch = batch_transform(batch)
 
-dataloader_train = DataLoader(dataset_train, batch_size=BATCH_SIZE, shuffle=True, num_workers=6, pin_memory=True)
-dataloader_val = DataLoader(dataset_val, batch_size=BATCH_SIZE, shuffle=True, num_workers=6, pin_memory=True)
-dataloader_viz = DataLoader(dataset_viz, batch_size=1, num_workers=1)
+        model.fit_sample(batch)
 
-transform = Compose([
-    transformation.RandomPerspective(yaw=(0, 360), pitch=(-20, 70), w_fov=(60, 120)),
-    transformation.Resize((256, 256), antialias=True),
-    transformation.NormalizeChannels()
-])
+        metric_logger.update_model_losses("train", model.loss_values)
+        metric_logger.get("train_generator_ssim").update((model.fake_streetviews, model.real_streetviews))
 
 
-viz_transform = Compose([
-    transformation.RandomPerspective(yaw=0, pitch=30, w_fov=100),
-    transformation.Resize((256, 256), antialias=True),
-    transformation.NormalizeChannels()
-])
+def validate(dataloader_val: DataLoader, batch_transform, model: GAN, metric_logger: MetricLogger):
+    for _, batch in enumerate(dataloader_val):
+        batch = batch_transform(batch)
 
-for i, _ in enumerate(dataset_viz):
-    (viz_dir / f"sample_{i}").mkdir(parents=True, exist_ok=True)
+        model.test(batch)
 
-for i_batch, batch in enumerate(dataloader_viz):
-    transformed_batch = viz_transform(batch)
-    sim_imgs = batch_to_numpy(transformed_batch["simulated"])
-    for i_sample, sim_img in enumerate(sim_imgs):
-        channels = multichannels_to_individuals(sim_img, dataset.passes_channel_nbr)
-        save_path = viz_dir / f"sample_{i_batch * dataloader_viz.batch_size + i_sample}" / "real_simulated"
-        fig = plot_sim(channels, list(dataset.render_passes.keys()))
+        metric_logger.update_model_losses("validate", model.loss_values)
+        metric_logger.get("test_generator_ssim").update((model.fake_streetviews, model.real_streetviews))
+
+
+def visualize(dataset_viz: Subset, model: GAN, epoch: int):
+    viz_dir = dataset_viz.out_dir
+
+    for i_sample, idx in enumerate(dataset_viz.indices):
+        sample = dataset_viz.dataset.get_untransformed_sample(idx)
+        # to_perspective transformation transforms a sample into a batch
+        batch = dataset_viz.transform(sample)
+        model.test(batch)
+
+        streetview_img = batch_to_numpy(model.fake_streetviews)[0].clip(0, 1)
+        target_img = batch_to_numpy(model.real_streetviews)[0]
+        discrimination_img = batch_to_numpy(torch.nn.Sigmoid()(model.discriminated_strt_fake))[0]
+
+        save_path = viz_dir / f"sample_{i_sample}" / f"strtviw_discrim&epoch_{epoch}"
+        fig = plot_streetview_with_discrimination(streetview_img, discrimination_img, target_img)
         fig.savefig(save_path, dpi=300, bbox_inches="tight", pad_inches=0.1)
         plt.close()
 
 
-model = GAN()
-init_weights(model, init_gain=1)
-checkpointer = Checkpointer(model, checkpoints_dir, 50)
+def run(cfg: dict, out_data_path: Path, batch_transform, dataloader_train: DataLoader, dataloader_val: DataLoader, dataset_viz: Dataset, model: GAN, checkpointer: Checkpointer, metric_logger: MetricLogger):
+    profile = cfg["train"]["profile"]
+    if profile:
+        pr = Profiler(interval=1e-2, async_mode="enabled")
+        pr.start()
+
+    for epoch in tqdm(range(cfg["train"]["n_epochs"])):
+        train(dataloader_train, batch_transform, model, metric_logger)
+        validate(dataloader_val, batch_transform, model, metric_logger)
+        visualize(dataset_viz, model, epoch)
+
+        checkpointer.step(epoch, "epoch")
+        metric_logger.step()
+
+    if profile:
+        pr.stop()
+        # pr.print(show_all=True)
+
+        html = pr.output(HTMLRenderer(show_all=True))
+        stats_file = out_data_path / "profile_stats.html"
+        stats_file.write_text(html, encoding="utf8")
 
 
-metrics = {
-    "train_generator_sim2strtview_ssim": SSIM(1.0, device="cuda:0"),
-    "train_generator_sim2strtview_l1loss": Loss(L1Loss(), device="cuda:0"),
-    "train_loss_generator": Average(device="cuda:0"),
-    "train_loss_generator_fooling": Average(device="cuda:0"),
-    "train_loss_generator_loss_gen_strtview": Average(device="cuda:0"),
-    "train_loss_discrim_strtview": Average(device="cuda:0"),
+def load_config(config_name: str, dir: Path = Path("config")):
+    filepath = dir / (config_name + ".yml")
 
-    "test_generator_sim2strtview_ssim": SSIM(1.0, device="cuda:0"),
-    "test_generator_sim2strtview_l1loss": Loss(L1Loss(), device="cuda:0"),
-    "test_loss_generator": Average(device="cuda:0"),
-    "test_loss_generator_fooling": Average(device="cuda:0"),
-    "test_loss_generator_loss_gen_strtview": Average(device="cuda:0"),
-    "test_loss_discrim_strtview": Average(device="cuda:0"),
-}
-metric_logger = MetricLogger(data_path / "metrics.log", metrics)
+    with filepath.open() as fp:
+        return yaml.load(fp, Loader=yaml.FullLoader)
 
 
-for epoch in tqdm(range(NUMBER_OF_EPOCHS)):
-    for batch in dataloader_train:
-        transform(batch)
-        model.fit_sample(batch)
-        metric_logger.get("train_loss_generator").update(model.generator_loss_value)
-        metric_logger.get("train_loss_generator_fooling").update(model.loss_fooling_discrim_strtview)
-        metric_logger.get("train_loss_generator_loss_gen_strtview").update(model.loss_gen_strtview)
-        metric_logger.get("train_loss_discrim_strtview").update(model.discriminator_Strtview.loss_value)
-        metric_logger.get("train_generator_sim2strtview_ssim").update((model.gen_streetviews, model.real_streetviews))
-        metric_logger.get("train_generator_sim2strtview_l1loss").update((model.gen_streetviews, model.real_streetviews))
+def create_dataloaders(dataset: Dataset, cfg):
+    dataset_train, dataset_val, dataset_viz = dataset_split(dataset, cfg["train"]["dataset_split"])
 
-    for batch in dataloader_val:
-        transform(batch)
-        model.test(batch)
-        metric_logger.get("test_loss_generator").update(model.generator_loss_value)
-        metric_logger.get("test_loss_generator_fooling").update(model.loss_fooling_discrim_strtview)
-        metric_logger.get("test_loss_generator_loss_gen_strtview").update(model.loss_gen_strtview)
-        metric_logger.get("test_loss_discrim_strtview").update(model.discriminator_Strtview.loss_value)
-        metric_logger.get("test_generator_sim2strtview_ssim").update((model.gen_streetviews, model.real_streetviews))
-        metric_logger.get("test_generator_sim2strtview_l1loss").update((model.gen_streetviews, model.real_streetviews))
+    dataloader_train = DataLoader(dataset_train, batch_size=cfg["train"]["batch_size"], shuffle=True, num_workers=4, pin_memory=True)
+    dataloader_val = DataLoader(dataset_val, batch_size=cfg["train"]["batch_size"], shuffle=True, num_workers=4, pin_memory=True)
 
-    for i_batch, batch in enumerate(dataloader_viz):
-        viz_transform(batch)
-        model.test(batch)
+    return dataloader_train, dataloader_val, dataset_viz
 
-        target_imgs = batch_to_numpy(model.real_streetviews)
-        streetview_imgs = batch_to_numpy(model.gen_streetviews)
-        discrimination_imgs = batch_to_numpy(model.discriminator_Strtview.gene_discrim)
 
-        for i_sample, (strtview_img, discrim_img, target_img) in enumerate(zip(streetview_imgs, discrimination_imgs, target_imgs)):
-            save_path = viz_dir / f"sample_{i_batch * dataloader_viz.batch_size + i_sample}" / f"strtviw_discrim&epoch_{epoch}"
-            fig = plot_streetview_with_discrimination(strtview_img, discrim_img, target_img)
-            fig.savefig(save_path, dpi=300, bbox_inches="tight", pad_inches=0.1)
-            plt.close()
+def create_initial_viz(dataset_viz):
+    viz_dir: Path = dataset_viz.out_dir
 
-    checkpointer.step(epoch, "epoch")
-    metric_logger.step()
+    for i in range(len(dataset_viz)):
+        (viz_dir / f"sample_{i}").mkdir(parents=True, exist_ok=True)
+
+    dataset = dataset_viz.dataset
+
+    for i_sample, idx in enumerate(dataset_viz.indices):
+        sample = dataset.get_untransformed_sample(idx)
+        sim_img = dataset_viz.transform(sample["simulated"])
+        sim_img = batch_to_numpy(sim_img)[0]
+
+        channels = multichannels_to_individuals(sim_img, dataset.passes_channel_nbr)
+        save_path = viz_dir / f"sample_{i_sample}" / "real_simulated"
+        fig = plot_sim(channels, dataset.render_passes)
+        fig.savefig(save_path, dpi=300, bbox_inches="tight", pad_inches=0.1)
+        plt.close()
+
+
+def get_metric_logger(out_data_path: Path):
+    metrics = {
+        "train_generator_ssim": SSIM(1.0, device="cuda:0"),
+        "test_generator_ssim": SSIM(1.0, device="cuda:0"),
+    }
+    metric_logger = MetricLogger(out_data_path / "metrics.log", metrics, torch.device("cuda:0"))
+
+    return metric_logger
+
+
+if __name__ == "__main__":
+    cfg = load_config("first")
+
+    in_data_path = Path(cfg["train"]["in_data"])
+    annotations_file = in_data_path / Path(r"annotations.arrow")
+    streetview_dir = in_data_path / Path(r"mapillary")
+    simulated_dir = in_data_path / Path(r"blender_numpy")
+
+    sample_transform = Compose([
+        transformation.Sample2Batch(),
+        transformation.RandomPerspective(yaw=(0, 360), pitch=(0, 60), w_fov=(60, 120)),
+        transformation.Resize((256, 256), antialias=True),
+        transformation.RandomHorizontalFlip(),
+        transformation.To(dtype=cfg["data"]["dtype"]),
+        transformation.Batch2Sample(),
+    ])
+
+    dataset = CustomImageDataset(
+        annotations_file,
+        streetview_dir,
+        simulated_dir,
+        transform=sample_transform
+    )
+    dataloader_train, dataloader_val, dataset_viz = create_dataloaders(dataset, cfg)
+
+    viz_transform = Compose([
+        transformation.Sample2Batch(),
+        transformation.To(torch.device("cuda:0")),
+        transformation.RandomPerspective(yaw=0, pitch=30, w_fov=100),
+        transformation.To(dtype=cfg["data"]["dtype"]),
+        transformation.Resize((256, 256), antialias=True),
+    ])
+
+    out_data_path = Path(cfg["train"]["out_data"])
+    out_data_path.mkdir(parents=True, exist_ok=True)
+    viz_dir = out_data_path / Path(r"visualisation")
+
+    dataset_viz.transform = viz_transform
+    dataset_viz.out_dir = viz_dir
+
+    create_initial_viz(dataset_viz)
+
+    model = GAN(
+        dtype=cfg["data"]["dtype"],
+        input_channels=cfg["data"]["input_channels"],
+        output_channels=cfg["data"]["output_channels"],
+        generator_kwargs=cfg["network"]["generator"],
+        discriminator_kwargs=cfg["network"]["discriminator"]
+    )
+    init_weights(model, init_type="xavier", gain=0.2)
+
+    checkpoints_dir = out_data_path / Path(r"checkpoints")
+    checkpointer = Checkpointer(model, checkpoints_dir, cfg["train"]["checkpointer"]["period"])
+
+    metric_logger = get_metric_logger(out_data_path)
+
+    batch_transform = Compose([
+        transformation.To(torch.device("cuda:0")),
+    ])
+
+    run(cfg, out_data_path, batch_transform, dataloader_train, dataloader_val, dataset_viz, model, checkpointer, metric_logger)
