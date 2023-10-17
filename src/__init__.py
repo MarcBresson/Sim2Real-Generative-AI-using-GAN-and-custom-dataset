@@ -1,7 +1,7 @@
 import torch
 
 
-def get_device(device: str):
+def get_device(device: str) -> torch.device:
     is_gpu = "cuda" in device
 
     if is_gpu and not torch.cuda.is_available():
