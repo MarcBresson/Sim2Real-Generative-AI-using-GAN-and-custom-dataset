@@ -57,12 +57,12 @@ class MetricLogger:
             metrics value in a recursive dict that has a metric value on each of its lowest levels.
         """
         for k, v in loss_values.items():
-            key_prefix = key_prefix + "_" + k
+            key_prefix_k = key_prefix + "-" + k
 
             if isinstance(v, dict):
-                self.update_model_losses(key_prefix, v)
+                self.update_model_losses(key_prefix_k, v)
             else:
-                self.update_metric(key_prefix, output=v)
+                self.update_metric(key_prefix_k, output=v)
 
     def update_metric(self, metric_name: str, output):
         """
