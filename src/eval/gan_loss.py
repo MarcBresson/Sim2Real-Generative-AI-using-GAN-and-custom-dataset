@@ -16,13 +16,20 @@ class BCEWithLogitsLoss(nn.BCEWithLogitsLoss):
 
 
 class HingeLoss(nn.HingeEmbeddingLoss):
-    """extension class to work with simplified inputs"""
+    """
+    extension class to work with simplified inputs
+
+    this loss doesn't work with logits so we need to apply the final
+    activation function: a sigmoid
+    """
     def __call__(self, input_: Tensor, is_target_real: bool) -> Tensor:
         target = torch.ones_like(input_)
 
         if not is_target_real:
             # target must be 1 or -1
             target = -target
+
+        input_ = nn.Sigmoid()(input_)
 
         loss_value = super().__call__(input_, target)
         return loss_value
