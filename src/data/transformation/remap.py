@@ -1,4 +1,4 @@
-from typing import Union
+from typing import Union, overload
 
 from torch import Tensor
 import numpy as np
@@ -22,13 +22,21 @@ class toNumpy():
 
 
 class Remap():
-    def __init__(self, in_min: float, in_max: float, out_min: float = -1, out_max: float = 1) -> None:
+    def __init__(self, in_min: Union[float, Tensor], in_max: Union[float, Tensor], out_min: Union[float, Tensor] = -1, out_max: Union[float, Tensor] = 1) -> None:
         self.in_min = in_min
         self.in_max = in_max
         self.out_min = out_min
         self.out_max = out_max
 
-    def __call__(self, imgs: Union[dict[str, Tensor], Tensor]) -> Union[dict[str, Tensor], Tensor]:
+    @overload
+    def __call__(self, imgs: dict[str, Tensor]) -> dict[str, Tensor]:
+        ...
+
+    @overload
+    def __call__(self, imgs: Tensor) -> Tensor:
+        ...
+
+    def __call__(self, imgs):
         scale_factor = (self.out_max - self.out_min) / (self.in_max - self.in_min)
 
         if isinstance(imgs, dict):
