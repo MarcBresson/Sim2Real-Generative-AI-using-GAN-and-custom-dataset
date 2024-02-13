@@ -20,3 +20,6 @@ class InferenceDataset(Dataset):
         sample = get_simulated_image(self.view_folder, view_id, return_nbr_of_channels_per_pass=False)
 
         return sample
+
+    def __len__(self):
+        return len(self.view_ids)

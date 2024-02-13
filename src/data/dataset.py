@@ -159,10 +159,8 @@ class CustomImageDataset(Dataset):
         simulated_ids = dir_to_img_ids(self.simulated_dir)
         streetview_ids = dir_to_img_ids(self.streetview_dir)
 
-        simulated_ids = np.array(simulated_ids)
-        streetview_ids = np.array(streetview_ids)
-
-        ids_to_download = np.setdiff1d(simulated_ids, streetview_ids)
+        s = set(streetview_ids)
+        ids_to_download = [x for x in simulated_ids if x not in s]
 
         if len(ids_to_download) > 0:
             logging.info("%s street views to download.", len(ids_to_download))

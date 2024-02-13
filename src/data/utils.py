@@ -16,7 +16,7 @@ def dir_to_img_ids(dir_: Path) -> list[int]:
 
         id_img = file.stem
 
-        ids.append(int(id_img))
+        ids.append(id_img)
 
     return ids
 
@@ -50,16 +50,16 @@ def construct_img_path(dir_: Path, image_id: Union[int, str], *, is_simulated: b
 
 
 @overload
-def get_simulated_image(simulated_dir: Path, image_id: int, pass_names: Optional[list[str]] = None, return_nbr_of_channels_per_pass: Literal[True] = True) -> dict[str, int]:
+def get_simulated_image(simulated_dir: Path, image_id: int, pass_names: Optional[list[str]], return_nbr_of_channels_per_pass: Literal[True]) -> dict[str, int]:
     ...
 
 
 @overload
-def get_simulated_image(simulated_dir: Path, image_id: int, pass_names: Optional[list[str]] = None, return_nbr_of_channels_per_pass: Literal[False] = False) -> torch.Tensor:
+def get_simulated_image(simulated_dir: Path, image_id: int, pass_names: Optional[list[str]], return_nbr_of_channels_per_pass: Literal[False]) -> torch.Tensor:
     ...
 
 
-def get_simulated_image(simulated_dir, image_id, pass_names, return_nbr_of_channels_per_pass=False):
+def get_simulated_image(simulated_dir, image_id, pass_names=None, return_nbr_of_channels_per_pass=False):
     """
     load a simulated image file from the disk.
 
