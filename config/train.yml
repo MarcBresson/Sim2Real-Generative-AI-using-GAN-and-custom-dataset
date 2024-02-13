@@ -2,6 +2,7 @@ network:
   generator:
     num_upsampling_layers: "most"
     n_filters: 128
+    input_size: 256
     lr: 1e-3
   discriminator:
     n_layers: 3

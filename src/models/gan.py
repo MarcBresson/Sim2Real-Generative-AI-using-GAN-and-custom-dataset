@@ -47,8 +47,10 @@ class GAN(nn.Module):
         self.real_streetviews = sample["streetview"]
         self.real_simulated = sample["simulated"]
 
-    def forward(self):
+    def forward(self, real_simulated: Tensor) -> Tensor:
+        self.real_simulated = real_simulated
         self.forward_G()
+        return self.fake_streetviews
 
     def forward_G(self):
         self.fake_streetviews: Tensor = self.generator(self.real_simulated)
