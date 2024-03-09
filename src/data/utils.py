@@ -55,7 +55,7 @@ def get_simulated_image(simulated_dir: Path, image_id: int, pass_names: Optional
 
 
 @overload
-def get_simulated_image(simulated_dir: Path, image_id: int, pass_names: Optional[list[str]], return_nbr_of_channels_per_pass: Literal[False]) -> torch.Tensor:
+def get_simulated_image(simulated_dir: Path, image_id: int, pass_names: Optional[list[str]], return_nbr_of_channels_per_pass: Literal[False] = False) -> torch.Tensor:
     ...
 
 

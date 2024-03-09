@@ -17,7 +17,7 @@ class InferenceDataset(Dataset):
     def __getitem__(self, idx: int) -> torch.Tensor:
         view_id = self.view_ids[idx]
 
-        sample = get_simulated_image(self.view_folder, view_id, return_nbr_of_channels_per_pass=False)
+        sample = get_simulated_image(self.view_folder, view_id, None)
 
         return sample
 

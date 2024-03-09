@@ -5,7 +5,7 @@ https://pytorch.org/tutorials/beginner/data_loading_tutorial.html
 https://pytorch.org/vision/main/transforms.html
 """
 
-from typing import Union
+from typing import Union, MutableSequence
 from pathlib import Path
 from collections import Counter
 import threading
@@ -33,7 +33,7 @@ class CustomImageDataset(Dataset):
         annotations_file: Path,
         streetview_dir: Path,
         blender_dir: Path,
-        render_passes: list[str] = None,
+        render_passes: list[str] | None = None,
         *,
         transform=None,
         download_missing_mapillary: bool = False,
@@ -95,7 +95,7 @@ class CustomImageDataset(Dataset):
             raise RuntimeError(f"Image at {truth_img_path} could not be loaded.") from exc
         truth_img = transformation.Remap(0, 255, 0, 1)(truth_img)
 
-        simul_img = get_simulated_image(self.simulated_dir, image_id, self.render_passes)
+        simul_img = get_simulated_image(self.simulated_dir, image_id, self.render_passes, False)
 
         sample = {"streetview": truth_img, "simulated": simul_img}
 
@@ -209,7 +209,7 @@ class CustomImageDataset(Dataset):
 
         def attempt_loading_simulated(image_id):
             try:
-                get_simulated_image(self.simulated_dir, image_id, self.render_passes)
+                get_simulated_image(self.simulated_dir, image_id, self.render_passes, False)
                 return True
             except (RuntimeError, ValueError):
                 # RuntimeError when file is empty
@@ -278,7 +278,7 @@ def delete_image(street_view_dir: Path, simulated_dir: Path, image_id: Union[str
     img_path.unlink(missing_ok=True)
 
 
-def dataset_split(dataset: Dataset, proportions: list[float]) -> list[Subset]:
+def dataset_split(dataset: Dataset, proportions: MutableSequence[float | int]) -> list[Subset]:
     """
     split a dataset in regards in proportions. It can be a mix of integers
     and float numbers.
@@ -286,7 +286,7 @@ def dataset_split(dataset: Dataset, proportions: list[float]) -> list[Subset]:
     Parameters
     ----------
     dataset : Dataset
-        dataset to split
+        dataset to split. Must implement __len__ magic method.
     proportions : list[float]
         the sum of the integers must be less than the length of the dataset,
         and the sum of the fractions must be <= 1. If integers and fractions
