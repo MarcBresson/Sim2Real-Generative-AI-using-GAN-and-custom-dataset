@@ -1,5 +1,4 @@
 from pathlib import Path
-import yaml
 
 import torch
 from torchvision.transforms import Compose
@@ -11,28 +10,20 @@ from src.data import InferenceDataset
 from src.data import transformation
 from src.models import GAN
 from src.data.visualisation import batch_to_numpy
+from config import InferenceConfig
 
 
-def load_config(config_name: str, dir_: Path = Path("config")):
-    filepath = dir_ / (config_name + ".yml")
-
-    with filepath.open() as fp:
-        return yaml.load(fp, Loader=yaml.FullLoader)
-
-
-cfg = load_config("train", Path("config"))
+cfg = InferenceConfig.load("train")
 
 model = GAN(
-    dtype=cfg["data"]["dtype"],
-    input_channels=cfg["data"]["input_channels"],
-    output_channels=cfg["data"]["output_channels"],
-    generator_kwargs=cfg["network"]["generator"],
-    discriminator_kwargs=cfg["network"]["discriminator"],
+    dtype=cfg.data.dtype,
+    input_channels=cfg.data.input_channels,
+    output_channels=cfg.data.output_channels,
+    generator_kwargs=cfg.network.generator.model_dump(),
+    discriminator_kwargs=cfg.network.discriminator.model_dump(),
 )
 
-model_state_dict = Path(r"data\train_big_spade_working\GAN_latest_epoch.pth")
-model.load_state_dict(torch.load(model_state_dict))
-
+model.load_state_dict(torch.load(cfg.inference.weights_path))
 model.eval()
 
 transform = Compose([
