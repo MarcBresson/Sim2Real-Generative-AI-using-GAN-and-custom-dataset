@@ -1,8 +1,8 @@
 """
 from https://github.com/timy90022/Perspective-and-Equirectangular/blob/master/lib/Equirec2Perspec.py
 """
-from typing import Sequence, Union
 import logging
+from typing import Sequence, Union, TypeAlias
 
 from numpy import radians, tan
 import torch
@@ -11,15 +11,18 @@ from torch import Tensor
 torch.manual_seed(972000)
 
 
+FloatRangeChoice: TypeAlias = float | tuple[float, float]
+
+
 class RandomPerspective():
     """
     Randomly pick a perspective view in the 360 image.
     """
     def __init__(
         self,
-        yaw: Union[float, tuple[float, float]],
-        pitch: Union[float, tuple[float, float]],
-        w_fov: Union[float, tuple[float, float]] = 90,
+        yaw: FloatRangeChoice,
+        pitch: FloatRangeChoice,
+        w_fov: FloatRangeChoice = 90,
     ):
         """
         Parameters
@@ -50,7 +53,7 @@ class RandomPerspective():
             self,
             equirec_imgs: Union[Tensor, dict[str, Tensor]],
             *,
-            max_retry: int = -1,
+            max_retry: int | float = float("inf"),
             _retry: int = 0
     ) -> Union[Tensor, dict[str, Tensor]]:
         """
@@ -64,7 +67,7 @@ class RandomPerspective():
         max_retry : int, optional
             the maximum number of retry in case of NaN values being present
             after the computation. 0 will disable retries, and -1 will give
-            unlimited retries, by default 5.
+            unlimited retries, by default -1.
         _retry : int, optional
             the current retry count, not intended to be public, by default 0
 
@@ -101,7 +104,7 @@ class RandomPerspective():
             return self(equirec_imgs, max_retry=max_retry, _retry=_retry)
 
         if _retry == max_retry:
-            logging.warn("Could not compute a non-corrupted perspective view.")
+            logging.warning("Could not compute a non-corrupted perspective view.")
             return torch.empty(0)
 
         if _retry > 0:
@@ -109,7 +112,7 @@ class RandomPerspective():
 
         return persp_imgs
 
-    def pick_parameters(self) -> tuple[float, float, float]:
+    def pick_parameters(self) -> tuple[float | int, float | int, float | int]:
         """
         pick a set of yaw, pitch and horizontal FOV that are in the
         range given or that corresponds to the number given.
@@ -119,17 +122,20 @@ class RandomPerspective():
         tuple[float, float, float]
             yaw, pitch, w_fov
         """
-        yaw = self.yaw
-        if isinstance(yaw, Sequence):
+        if isinstance(self.yaw, tuple):
             yaw = rng_range(self.yaw[0], self.yaw[1])
+        else:
+            yaw = self.yaw
 
-        pitch = self.pitch
-        if isinstance(pitch, Sequence):
+        if isinstance(self.pitch, tuple):
             pitch = rng_range(self.pitch[0], self.pitch[1])
+        else:
+            pitch = self.pitch
 
-        w_fov = self.w_fov
-        if isinstance(w_fov, Sequence):
+        if isinstance(self.w_fov, tuple):
             w_fov = rng_range(self.w_fov[0], self.w_fov[1])
+        else:
+            w_fov = self.w_fov
 
         return yaw, pitch, w_fov
 
