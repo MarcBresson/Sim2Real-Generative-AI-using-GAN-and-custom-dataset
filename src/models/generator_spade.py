@@ -9,6 +9,8 @@ from torch import nn
 from torch.nn import functional as F
 from torch.nn.utils.parametrizations import spectral_norm
 
+from config import OptimizerKwargs
+
 
 class SPADEGenerator(nn.Module):
     def __init__(
@@ -23,10 +25,9 @@ class SPADEGenerator(nn.Module):
         use_vae: bool = False,
         device: torch.device = torch.device("cuda:0"),
         dtype: torch.dtype = torch.float32,
-        lr: float = 1e-4, beta1: float = 0.0, beta2: float = 0.999,
+        optimizer_kwargs: OptimizerKwargs = OptimizerKwargs(),
     ):
         "If 'more', adds upsampling layer between the two middle resnet blocks. If 'most', also add one more upsampling + resnet layer at the end of the generator"
-        "dimension of the latent z vector"
 
         super().__init__()
         self.n_filters = n_filters
@@ -70,11 +71,8 @@ class SPADEGenerator(nn.Module):
 
         self.to(device=device, dtype=dtype)
 
-        lr = float(lr)
-        beta1 = float(beta1)
-        beta2 = float(beta2)
         # https://machinelearningmastery.com/adam-optimization-algorithm-for-deep-learning/
-        self.optimizer = torch.optim.Adam(self.parameters(), lr=lr, betas=(beta1, beta2))
+        self.optimizer = torch.optim.Adam(self.parameters(), **optimizer_kwargs.model_dump())
 
     def compute_latent_vector_size(self):
         if self.num_upsampling_layers == 'normal':

@@ -31,7 +31,7 @@ class GAN(nn.Module):
             discriminator_kwargs = {}
 
         self.generator = SPADEGenerator(input_channels, output_channels, device=device, dtype=_dtype, **generator_kwargs)
-        self.discriminator = PatchGAN(input_channels, output_channels, device=device, dtype=_dtype, **discriminator_kwargs)
+        self.discriminator = PatchGAN(output_channels, device=device, dtype=_dtype, **discriminator_kwargs)
 
         self.fooling_loss = HingeLoss()
         self.gen_loss = nn.L1Loss()

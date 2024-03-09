@@ -1,7 +1,7 @@
 import torch
 from torch import Tensor, nn
 
-from src.eval.gan_loss import BCEWithLogitsLoss
+from config import OptimizerKwargs
 
 
 class PatchGAN(nn.Module):
@@ -9,16 +9,13 @@ class PatchGAN(nn.Module):
 
     def __init__(
         self,
-        input_nc: int,
         output_nc: int,
         n_filters: int = 64,
         n_layers: int = 3,
         norm_layer=nn.BatchNorm2d,
-        lr: float = 1e-3,
-        beta1: float = 0.5,
-        beta2: float = 0.999,
         device: torch.device = torch.device("cuda:0"),
-        dtype: torch.dtype = torch.float32
+        dtype: torch.dtype = torch.float32,
+        optimizer_kwargs: OptimizerKwargs = OptimizerKwargs(),
     ):
         """
         Construct a PatchGAN discriminator
@@ -40,10 +37,7 @@ class PatchGAN(nn.Module):
         self.model.to(device=device, dtype=dtype)
 
         # https://machinelearningmastery.com/adam-optimization-algorithm-for-deep-learning/
-        lr = float(lr)
-        beta1 = float(beta1)
-        beta2 = float(beta2)
-        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=lr, betas=(beta1, beta2))
+        self.optimizer = torch.optim.Adam(self.model.parameters(), **optimizer_kwargs.model_dump())
 
     def build(self, output_nc: int, n_filters: int = 64, n_layers: int = 3, norm_layer=nn.BatchNorm2d):
         """build the discriminator"""

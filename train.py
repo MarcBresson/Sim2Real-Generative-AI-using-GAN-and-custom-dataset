@@ -1,9 +1,9 @@
 import logging
 from pathlib import Path
+from typing import MutableSequence
 
 from pyinstrument import Profiler
 from pyinstrument.renderers import HTMLRenderer
-import yaml
 from tqdm import tqdm
 import torch
 from torch.utils.data import DataLoader, Dataset, Subset
@@ -12,10 +12,11 @@ from ignite.metrics import SSIM
 from matplotlib import pyplot as plt
 
 from src.logger import Checkpointer, MetricLogger
-from src.models import GAN, CycleGAN, init_weights
+from src.models import GAN, init_weights
 from src.data import CustomImageDataset, dataset_split
 from src.data import transformation
 from src.data.visualisation import batch_to_numpy, plot_streetview_with_discrimination, plot_sim, multichannels_to_individuals
+from config import TrainConfig
 
 logging.getLogger().setLevel(logging.INFO)
 
@@ -82,18 +83,11 @@ def run(cfg: dict, out_data_path: Path, batch_transform, dataloader_train: DataL
         stats_file.write_text(html, encoding="utf8")
 
 
-def load_config(config_name: str, dir: Path = Path("config")):
-    filepath = dir / (config_name + ".yml")
+def create_dataloaders(dataset: Dataset, dataset_split_proportions: MutableSequence[float | int], batch_size: int):
+    dataset_train, dataset_val, dataset_viz = dataset_split(dataset, dataset_split_proportions)
 
-    with filepath.open() as fp:
-        return yaml.load(fp, Loader=yaml.FullLoader)
-
-
-def create_dataloaders(dataset: Dataset, cfg):
-    dataset_train, dataset_val, dataset_viz = dataset_split(dataset, cfg["train"]["dataset_split"])
-
-    dataloader_train = DataLoader(dataset_train, batch_size=cfg["train"]["batch_size"], shuffle=True, num_workers=4, pin_memory=True)
-    dataloader_val = DataLoader(dataset_val, batch_size=cfg["train"]["batch_size"], shuffle=True, num_workers=4, pin_memory=True)
+    dataloader_train = DataLoader(dataset_train, batch_size=batch_size, shuffle=True, num_workers=4, pin_memory=True)
+    dataloader_val = DataLoader(dataset_val, batch_size=batch_size, shuffle=True, num_workers=4, pin_memory=True)
 
     return dataloader_train, dataloader_val, dataset_viz
 
@@ -129,9 +123,9 @@ def get_metric_logger(out_data_path: Path):
 
 
 if __name__ == "__main__":
-    cfg = load_config("first")
+    cfg = TrainConfig.load("train")
 
-    in_data_path = Path(cfg["train"]["in_data"])
+    in_data_path = cfg.train.in_data_path
     annotations_file = in_data_path / Path(r"annotations.arrow")
     streetview_dir = in_data_path / Path(r"mapillary")
     simulated_dir = in_data_path / Path(r"blender_numpy")
@@ -141,7 +135,7 @@ if __name__ == "__main__":
         transformation.RandomPerspective(yaw=(0, 360), pitch=(0, 60), w_fov=(60, 120)),
         transformation.Resize((256, 256), antialias=True),
         transformation.RandomHorizontalFlip(),
-        transformation.To(dtype=cfg["data"]["dtype"]),
+        transformation.To(dtype=cfg.data.dtype),
         transformation.Batch2Sample(),
     ])
 
@@ -151,17 +145,22 @@ if __name__ == "__main__":
         simulated_dir,
         transform=sample_transform
     )
-    dataloader_train, dataloader_val, dataset_viz = create_dataloaders(dataset, cfg)
+
+    split_with_viz = cfg.train.dataset_split + [cfg.train.visualisation.n_samples]
+    dataset_train, dataset_val, dataset_viz = dataset_split(dataset, split_with_viz)
+
+    dataloader_train = DataLoader(dataset_train, batch_size=cfg.train.batch_size, shuffle=True, num_workers=4, pin_memory=True)
+    dataloader_val = DataLoader(dataset_val, batch_size=cfg.train.batch_size, shuffle=True, num_workers=4, pin_memory=True)
 
     viz_transform = Compose([
         transformation.Sample2Batch(),
-        transformation.To(torch.device("cuda:0")),
         transformation.RandomPerspective(yaw=0, pitch=30, w_fov=100),
-        transformation.To(dtype=cfg["data"]["dtype"]),
+        transformation.To(dtype=cfg.data.dtype),
         transformation.Resize((256, 256), antialias=True),
+        transformation.To(torch.device("cuda:0")),
     ])
 
-    out_data_path = Path(cfg["train"]["out_data"])
+    out_data_path = Path(cfg.train.out_data_path)
     out_data_path.mkdir(parents=True, exist_ok=True)
     viz_dir = out_data_path / Path(r"visualisation")
 
@@ -171,16 +170,16 @@ if __name__ == "__main__":
     create_initial_viz(dataset_viz)
 
     model = GAN(
-        dtype=cfg["data"]["dtype"],
-        input_channels=cfg["data"]["input_channels"],
-        output_channels=cfg["data"]["output_channels"],
-        generator_kwargs=cfg["network"]["generator"],
-        discriminator_kwargs=cfg["network"]["discriminator"]
+        dtype=cfg.data.dtype,
+        input_channels=cfg.data.input_channels,
+        output_channels=cfg.data.output_channels,
+        generator_kwargs=cfg.network.generator.model_dump(),
+        discriminator_kwargs=cfg.network.discriminator.model_dump()
     )
     init_weights(model, init_type="xavier", gain=0.2)
 
     checkpoints_dir = out_data_path / Path(r"checkpoints")
-    checkpointer = Checkpointer(model, checkpoints_dir, cfg["train"]["checkpointer"]["period"])
+    checkpointer = Checkpointer(model, checkpoints_dir, cfg.train.checkpointer.period)
 
     metric_logger = get_metric_logger(out_data_path)
 
