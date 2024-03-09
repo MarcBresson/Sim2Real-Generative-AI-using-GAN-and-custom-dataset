@@ -1,22 +1,31 @@
+data:
+  input_channels: 7
+  output_channels: 3
+  dtype: float32
 network:
   generator:
     num_upsampling_layers: "most"
     n_filters: 128
     input_size: 256
-    lr: 1e-3
+    optimizer_kwargs:
+      lr: 1e-3
   discriminator:
     n_layers: 3
     n_filters: 64
-    lr: 1e-3
+    optimizer_kwargs:
+      lr: 1e-3
 train:
-  in_data: data/
-  out_data: data/sim2real
+  in_data_path: data/
+  out_data_path: data/sim2real
   n_epochs: 1000
   batch_size: 20
-  dataset_split: [0.8, 0.2, 20]
+  dataset_split: [0.8, 0.2]
   checkpointer:
     period: 50
-data:
-  input_channels: 7
-  output_channels: 3
-  dtype: float32
+  visualisation:
+    n_samples: 20
+    every_nth_epoch: 1
+inference:
+  in_data_path: data/inference/numpy
+  out_data_path: data/inference/generated
+  weights_path: data/train_big_spade_working/GAN_latest_epoch.pth
