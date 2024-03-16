@@ -1,13 +1,14 @@
 from pathlib import Path
-from typing import Annotated, overload, TypeAlias
-import yaml
+from typing import Annotated, TypeAlias, overload
+
+import yaml  # type: ignore[import-untyped]
 
 try:
     from typing import Self
 except ImportError:
-    from typing_extensions import Self
+    from typing import Self
 
-from pydantic import BaseModel, ConfigDict, FilePath, DirectoryPath
+from pydantic import BaseModel, ConfigDict, DirectoryPath, FilePath
 from pydantic.functional_validators import AfterValidator
 
 
@@ -52,6 +53,13 @@ class Network(BaseModel):
     discriminator: Discriminator
 
 
+class Dataloader(BaseModel):
+    batch_size: int
+    shuffle: bool = True
+    num_workers: int = 4
+    pin_memory: bool = True
+
+
 class Train(BaseModel):
     class Checkpointer(BaseModel):
         period: int
@@ -63,7 +71,7 @@ class Train(BaseModel):
     in_data_path: DirectoryPath
     out_data_path: NewPathAndParents
     n_epochs: int
-    batch_size: int
+    dataloader: Dataloader
     dataset_split: list[float | int]
     profile: bool = False
     checkpointer: Checkpointer

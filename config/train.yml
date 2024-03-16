@@ -18,13 +18,14 @@ train:
   in_data_path: data/
   out_data_path: data/sim2real
   n_epochs: 1000
-  batch_size: 20
   dataset_split: [0.8, 0.2]
   checkpointer:
     period: 50
   visualisation:
     n_samples: 20
     every_nth_epoch: 1
+  dataloader:
+    batch_size: 4
 inference:
   in_data_path: data/inference/numpy
   out_data_path: data/inference/generated
