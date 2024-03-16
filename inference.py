@@ -1,17 +1,13 @@
-from pathlib import Path
-
-import torch
-from torchvision.transforms import Compose
-from torch.utils.data import DataLoader
 import matplotlib.pyplot as plt
 import numpy as np
+import torch
+from torch.utils.data import DataLoader
+from torchvision.transforms import Compose
 
-from src.data import InferenceDataset
-from src.data import transformation
-from src.models import GAN
-from src.data.visualisation import batch_to_numpy
 from config import InferenceConfig
-
+from src.data import InferenceDataset, transformation
+from src.data.visualisation import batch_to_numpy
+from src.models import GAN
 
 cfg = InferenceConfig.load("train")
 
@@ -26,12 +22,15 @@ model = GAN(
 model.load_state_dict(torch.load(cfg.inference.weights_path))
 model.eval()
 
-transform = Compose([
-    transformation.Resize((256, 256), antialias=True),
-    transformation.To(torch.device("cuda:0")),
-])
+input_size = cfg.network.generator.input_size
+transform = Compose(
+    [
+        transformation.Resize((input_size, input_size), antialias=True),
+        transformation.To(torch.device("cuda:0")),
+    ]
+)
 
-dataset = InferenceDataset(Path("data", "inference", "numpy"))
+dataset = InferenceDataset(cfg.inference.in_data_path)
 dataloader = DataLoader(dataset, batch_size=2)
 
 sample_counter = 0
@@ -41,5 +40,8 @@ for batch in dataloader:
     imgs_inference = batch_to_numpy(pred)
 
     for img_inference in imgs_inference:
-        plt.imsave(f"data/inference/pred/{sample_counter}.png", (img_inference * 255).astype(np.uint8))
+        plt.imsave(
+            f"data/inference/pred/{sample_counter}.png",
+            (img_inference * 255).astype(np.uint8),
+        )
         sample_counter += 1
