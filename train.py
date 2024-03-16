@@ -6,7 +6,7 @@ import torch
 from ignite.metrics import SSIM
 from matplotlib import pyplot as plt
 from pyinstrument import Profiler
-from pyinstrument.renderers import HTMLRenderer
+from pyinstrument.renderers.html import HTMLRenderer
 from torch.utils.data import DataLoader, Dataset
 from torchvision.transforms import Compose
 from tqdm import tqdm
@@ -156,7 +156,7 @@ def get_dataset(cfg: TrainConfig) -> CustomImageDataset:
     return dataset
 
 
-if __name__ == "__main__":
+def main():
     cfg = TrainConfig.load("train")
 
     dataset = get_dataset(cfg)
@@ -226,3 +226,7 @@ if __name__ == "__main__":
         html = pr.output(HTMLRenderer(show_all=True))
         stats_file = cfg.train.out_data_path / "profile_stats.html"
         stats_file.write_text(html, encoding="utf8")
+
+
+if __name__ == "__main__":
+    main()
