@@ -15,8 +15,8 @@ model = GAN(
     dtype=cfg.data.dtype,
     input_channels=cfg.data.input_channels,
     output_channels=cfg.data.output_channels,
-    generator_kwargs=cfg.network.generator.model_dump(),
-    discriminator_kwargs=cfg.network.discriminator.model_dump(),
+    generator_kwargs=dict(cfg.network.generator),
+    discriminator_kwargs=dict(cfg.network.discriminator),
 )
 
 model.load_state_dict(torch.load(cfg.inference.weights_path))

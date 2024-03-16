@@ -11,7 +11,7 @@ from torch.utils.data import DataLoader, Dataset
 from torchvision.transforms import Compose
 from tqdm import tqdm
 
-from config import TrainConfig, model_dump_first_level
+from config import TrainConfig
 from src.data import CustomImageDataset, dataset_split, transformation
 from src.data.visualisation import (
     Visualisation,
@@ -188,8 +188,8 @@ if __name__ == "__main__":
         dtype=cfg.data.dtype,
         input_channels=cfg.data.input_channels,
         output_channels=cfg.data.output_channels,
-        generator_kwargs=model_dump_first_level(cfg.network.generator),
-        discriminator_kwargs=model_dump_first_level(cfg.network.discriminator),
+        generator_kwargs=dict(cfg.network.generator),
+        discriminator_kwargs=dict(cfg.network.discriminator),
     )
     init_weights(model, init_type="xavier", gain=0.2)
 
