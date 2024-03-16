@@ -16,11 +16,20 @@ dependencies = [
     "pyyaml",
     "pandas",
     "pyarrow",
+    "pydantic",
+    "pyinstrument",
     "matplotlib",
     "numpy",
     "opencv-python",
     "torch",
+    "torchvision",
     "pytorch-ignite"
+]
+
+[project.optional-dependencies]
+dev = [
+    "pre-commit",
+    "black",
 ]
 
 [project.urls]
