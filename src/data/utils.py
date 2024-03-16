@@ -1,13 +1,13 @@
-from typing import Union, overload, Literal, Optional
 from pathlib import Path
+from typing import Literal, overload
 
-import torch
 import numpy as np
+import torch
 
 from src.data.transformation import Remap
 
 
-def dir_to_img_ids(dir_: Path) -> list[int]:
+def dir_to_img_ids(dir_: Path) -> list[str]:
     """list all the ids of each file in a directory"""
     ids = []
     for file in dir_.iterdir():
@@ -21,7 +21,9 @@ def dir_to_img_ids(dir_: Path) -> list[int]:
     return ids
 
 
-def construct_img_path(dir_: Path, image_id: Union[int, str], *, is_simulated: bool = False) -> Path:
+def construct_img_path(
+    dir_: Path, image_id: int | str, *, is_simulated: bool = False
+) -> Path:
     """
     build the path to an image.
 
@@ -50,16 +52,26 @@ def construct_img_path(dir_: Path, image_id: Union[int, str], *, is_simulated: b
 
 
 @overload
-def get_simulated_image(simulated_dir: Path, image_id: int, pass_names: Optional[list[str]], return_nbr_of_channels_per_pass: Literal[True]) -> dict[str, int]:
-    ...
+def get_simulated_image(
+    simulated_dir: Path,
+    image_id: int | str,
+    pass_names: list[str] | None,
+    return_nbr_of_channels_per_pass: Literal[True],
+) -> dict[str, int]: ...
 
 
 @overload
-def get_simulated_image(simulated_dir: Path, image_id: int, pass_names: Optional[list[str]], return_nbr_of_channels_per_pass: Literal[False] = False) -> torch.Tensor:
-    ...
+def get_simulated_image(
+    simulated_dir: Path,
+    image_id: int | str,
+    pass_names: list[str] | None,
+    return_nbr_of_channels_per_pass: Literal[False] = False,
+) -> torch.Tensor: ...
 
 
-def get_simulated_image(simulated_dir, image_id, pass_names=None, return_nbr_of_channels_per_pass=False):
+def get_simulated_image(
+    simulated_dir, image_id, pass_names=None, return_nbr_of_channels_per_pass=False
+):
     """
     load a simulated image file from the disk.
 

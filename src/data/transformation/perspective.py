@@ -1,11 +1,13 @@
 """
 from https://github.com/timy90022/Perspective-and-Equirectangular/blob/master/lib/Equirec2Perspec.py
 """
-import logging
-from typing import Sequence, Union, TypeAlias
 
-from numpy import radians, tan
+import logging
+from collections.abc import Sequence
+from typing import TypeAlias
+
 import torch
+from numpy import radians, tan
 from torch import Tensor
 
 torch.manual_seed(972000)
@@ -14,10 +16,11 @@ torch.manual_seed(972000)
 FloatRangeChoice: TypeAlias = float | tuple[float, float]
 
 
-class RandomPerspective():
+class RandomPerspective:
     """
     Randomly pick a perspective view in the 360 image.
     """
+
     def __init__(
         self,
         yaw: FloatRangeChoice,
@@ -45,17 +48,17 @@ class RandomPerspective():
         self.pitch = pitch
         self.w_fov = w_fov
 
-        self.last_yaw = None
-        self.last_pitch = None
-        self.last_w_fov = None
+        self.last_yaw: float | int | None = None
+        self.last_pitch: float | int | None = None
+        self.last_w_fov: float | int | None = None
 
     def __call__(
-            self,
-            equirec_imgs: Union[Tensor, dict[str, Tensor]],
-            *,
-            max_retry: int | float = float("inf"),
-            _retry: int = 0
-    ) -> Union[Tensor, dict[str, Tensor]]:
+        self,
+        equirec_imgs: Tensor | dict[str, Tensor],
+        *,
+        max_retry: int | float = float("inf"),
+        _retry: int = 0,
+    ) -> Tensor | dict[str, Tensor]:
         """
         Transform a given batch with random parameters. In case of failure
         to compute, will retry to transform with new parameters.
@@ -93,8 +96,10 @@ class RandomPerspective():
             persp_imgs = self.transform_concatenated(equirec_imgs, yaw, pitch, w_fov)
 
         else:
-            raise TypeError(f"type {type(equirec_imgs)} is not supported. Please use a Tensor or a "
-                            "dict with keys `simulated` and `streetview`.")
+            raise TypeError(
+                f"type {type(equirec_imgs)} is not supported. Please use a Tensor or a "
+                "dict with keys `simulated` and `streetview`."
+            )
 
         if max_retry == -1:
             max_retry = float("inf")
@@ -108,7 +113,9 @@ class RandomPerspective():
             return torch.empty(0)
 
         if _retry > 0:
-            logging.debug("Had to retry %s times to compute a perspective view.", _retry)
+            logging.debug(
+                "Had to retry %s times to compute a perspective view.", _retry
+            )
 
         return persp_imgs
 
@@ -139,21 +146,29 @@ class RandomPerspective():
 
         return yaw, pitch, w_fov
 
-    def transform_concatenated(self, concat_imgs: Tensor, yaw: float, pitch: float, w_fov: float):
+    def transform_concatenated(
+        self, concat_imgs: Tensor, yaw: float, pitch: float, w_fov: float
+    ):
         """given already concatenated images, transform them."""
         persp_imgs = Equirec(concat_imgs).to_persp(yaw, pitch, w_fov)
 
         return persp_imgs
 
-    def transform(self, equirec_imgs: dict[str, Tensor], yaw: float, pitch: float, w_fov: float) -> dict[str, Tensor]:
+    def transform(
+        self, equirec_imgs: dict[str, Tensor], yaw: float, pitch: float, w_fov: float
+    ) -> dict[str, Tensor]:
         """transform a dict batch"""
         persp_imgs = {}
-        persp_imgs["streetview"] = Equirec(equirec_imgs["streetview"]).to_persp(yaw, pitch, w_fov)
-        persp_imgs["simulated"] = Equirec(equirec_imgs["simulated"]).to_persp(yaw, pitch, w_fov)
+        persp_imgs["streetview"] = Equirec(equirec_imgs["streetview"]).to_persp(
+            yaw, pitch, w_fov
+        )
+        persp_imgs["simulated"] = Equirec(equirec_imgs["simulated"]).to_persp(
+            yaw, pitch, w_fov
+        )
 
         return persp_imgs
 
-    def persp_has_nan(self, persp_imgs: Union[Tensor, dict[str, Tensor]]) -> bool:
+    def persp_has_nan(self, persp_imgs: Tensor | dict[str, Tensor]) -> bool:
         """
         check if the transformed perspective images has NaN values.
 
@@ -168,13 +183,17 @@ class RandomPerspective():
             whether there are NaN values in the transformed perspective images.
         """
         if isinstance(persp_imgs, dict):
-            return bool(persp_imgs["simulated"].isnan().any()) or bool(persp_imgs["streetview"].isnan().any())
+            return bool(persp_imgs["simulated"].isnan().any()) or bool(
+                persp_imgs["streetview"].isnan().any()
+            )
 
         elif isinstance(persp_imgs, Tensor):
             return bool(persp_imgs.isnan().any())
 
-        raise TypeError("Unknown error while checking for NaN values. The given type "
-                        f"{type(persp_imgs)} was not suppose to be given.")
+        raise TypeError(
+            "Unknown error while checking for NaN values. The given type "
+            f"{type(persp_imgs)} was not suppose to be given."
+        )
 
     def __str__(self) -> str:
         s = "("
@@ -238,8 +257,10 @@ class Equirec:
                 - W is the width of the images
         """
         if len(img_batch.shape) != 4:
-            raise ValueError(f"img_batch should be of dimension 4. Found {len(img_batch.shape)}."
-                             "in case of single image, you can use `img.unsqueeze(0)`.")
+            raise ValueError(
+                f"img_batch should be of dimension 4. Found {len(img_batch.shape)}."
+                "in case of single image, you can use `img.unsqueeze(0)`."
+            )
         self.device = img_batch.device
 
         self.img_batch = img_batch.to(self.device)
@@ -248,7 +269,9 @@ class Equirec:
         self._width = img_batch.shape[3]
         self._height = img_batch.shape[2]
 
-    def to_persp(self, yaw: float, pitch: float, w_fov: float = 90, aspect_ratio: float = 1) -> torch.Tensor:
+    def to_persp(
+        self, yaw: float, pitch: float, w_fov: float = 90, aspect_ratio: float = 1
+    ) -> torch.Tensor:
         """
         Parameters
         ----------
@@ -268,13 +291,19 @@ class Equirec:
         lon, lat = self.compute_maps(yaw, pitch, w_fov, h_fov)
 
         grid = torch.stack((lon / 1024 - 1, lat / 512 - 1), dim=2)
-        grid = grid.unsqueeze(0).repeat((self.batch_size, 1, 1, 1))  # we use the same grid for the whole batch
+        grid = grid.unsqueeze(0).repeat(
+            (self.batch_size, 1, 1, 1)
+        )  # we use the same grid for the whole batch
 
-        persp = torch.nn.functional.grid_sample(self.img_batch, grid, align_corners=False)
+        persp = torch.nn.functional.grid_sample(
+            self.img_batch, grid, align_corners=False
+        )
 
         return persp
 
-    def compute_maps(self, yaw: float, pitch: float, w_fov: float = 90, h_fov: float = 90) -> tuple[torch.Tensor, torch.Tensor]:
+    def compute_maps(
+        self, yaw: float, pitch: float, w_fov: float = 90, h_fov: float = 90
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         """
         the first matrix indicates where to find the source x coordinate of a (x, y) point.
         the second matrix indicates where to find the source y coordinate of a (x, y) point.
@@ -302,8 +331,12 @@ class Equirec:
         height = int(self._height * h_fov / 180)
 
         x_map = torch.ones([height, width], device=self.device)
-        y_map = torch.tile(torch.linspace(-w_len, w_len, width, device=self.device), [height, 1])
-        z_map = torch.tile(torch.linspace(h_len, -h_len, height, device=self.device), [width, 1]).transpose(0, 1)
+        y_map = torch.tile(
+            torch.linspace(-w_len, w_len, width, device=self.device), [height, 1]
+        )
+        z_map = torch.tile(
+            torch.linspace(h_len, -h_len, height, device=self.device), [width, 1]
+        ).transpose(0, 1)
 
         distance: torch.Tensor = torch.sqrt(x_map**2 + y_map**2 + z_map**2)
         distance = distance.unsqueeze(2).repeat((1, 1, 3))
@@ -333,7 +366,10 @@ class Equirec:
 
 # from https://github.com/facebookresearch/pytorch3d/blob/main/pytorch3d/transforms/rotation_conversions.py#L461
 
-def rot_matrices(yaw: float, pitch: float, device: torch.device, inverse: bool = False) -> tuple[torch.Tensor, torch.Tensor]:
+
+def rot_matrices(
+    yaw: float, pitch: float, device: torch.device, inverse: bool = False
+) -> tuple[torch.Tensor, torch.Tensor]:
     """return the two rotation matrices for a yaw and a pitch"""
     y_axis = torch.tensor([0.0, 1.0, 0.0], dtype=torch.float32, device=device)
     z_axis = torch.tensor([0.0, 0.0, radians(yaw)], dtype=torch.float32, device=device)

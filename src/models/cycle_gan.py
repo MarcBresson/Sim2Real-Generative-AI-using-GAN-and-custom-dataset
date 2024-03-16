@@ -1,39 +1,65 @@
-from typing import Any, Union
 from pathlib import Path
+from typing import Any
 
 import torch
-from torch import Tensor
-from torch import nn
+from torch import Tensor, nn
 
+from src.eval.gan_loss import BCEWithLogitsLoss
 from src.models.discriminator_patchgan import PatchGAN
 from src.models.generator_spade import SPADEGenerator
-from src.eval.gan_loss import BCEWithLogitsLoss
 
 
 class CycleGAN(nn.Module):
     def __init__(
         self,
-        dtype: Union[torch.dtype, str] = "float32",
+        dtype: torch.dtype | str = "float32",
         input_channels: int = 7,
         output_channels: int = 3,
         device: torch.device = torch.device("cuda:0"),
-        generator_kwargs: Union[dict[str, Any], None] = None,
-        discriminator_kwargs: Union[dict[str, Any], None] = None
+        generator_kwargs: dict[str, Any] | None = None,
+        discriminator_kwargs: dict[str, Any] | None = None,
     ) -> None:
         super().__init__()
 
+        dtype_: torch.dtype
         if isinstance(dtype, str):
-            dtype: torch.dtype = getattr(torch, dtype)
+            dtype_ = getattr(torch, dtype)
+        else:
+            dtype_ = dtype
 
         if generator_kwargs is None:
             generator_kwargs = {}
         if discriminator_kwargs is None:
             discriminator_kwargs = {}
 
-        self.generator_strt = SPADEGenerator(input_channels, output_channels, device=device, dtype=dtype, **generator_kwargs)
-        self.generator_simu = SPADEGenerator(output_channels, input_channels, device=device, dtype=dtype, **generator_kwargs)
-        self.discriminator_strt = PatchGAN(input_channels, output_channels, device=device, dtype=dtype, **discriminator_kwargs)
-        self.discriminator_simu = PatchGAN(output_channels, input_channels, device=device, dtype=dtype, **discriminator_kwargs)
+        self.generator_strt = SPADEGenerator(
+            input_channels,
+            output_channels,
+            device=device,
+            dtype=dtype_,
+            **generator_kwargs,
+        )
+        self.generator_simu = SPADEGenerator(
+            output_channels,
+            input_channels,
+            device=device,
+            dtype=dtype_,
+            **generator_kwargs,
+        )
+        self.discriminator_strt = PatchGAN(
+            input_channels,
+            output_channels,
+            device=device,
+            dtype=dtype_,
+            **discriminator_kwargs,
+        )
+        self.discriminator_simu = PatchGAN(
+            output_channels,
+            input_channels,
+            device=device,
+            dtype=dtype_,
+            **discriminator_kwargs,
+        )
 
         self.fooling_loss = BCEWithLogitsLoss()
         self.cycle_loss = nn.L1Loss()
@@ -61,10 +87,14 @@ class CycleGAN(nn.Module):
 
     def forward_D(self):
         self.discriminated_strt_real = self.discriminator_strt(self.real_streetviews)
-        self.discriminated_strt_fake = self.discriminator_strt(self.fake_streetviews.detach())
+        self.discriminated_strt_fake = self.discriminator_strt(
+            self.fake_streetviews.detach()
+        )
 
         self.discriminated_simu_real = self.discriminator_simu(self.real_simulated)
-        self.discriminated_simu_fake = self.discriminator_simu(self.fake_simulated.detach())
+        self.discriminated_simu_fake = self.discriminator_simu(
+            self.fake_simulated.detach()
+        )
 
     def backward_G(self, only_compute_loss: bool = False):
         # we want to optimize the generator so that the discriminator is wrong more often.
@@ -75,16 +105,29 @@ class CycleGAN(nn.Module):
         discriminated_simu_fake = self.discriminator_simu(self.fake_simulated)
         fooling_simu_loss_value = self.fooling_loss(discriminated_simu_fake, True)
 
-        cycled_strt_loss_value = self.cycle_loss(self.cycled_streetviews, self.real_streetviews)
-        cycled_simu_loss_value = self.cycle_loss(self.cycled_simulated, self.real_simulated)
+        cycled_strt_loss_value = self.cycle_loss(
+            self.cycled_streetviews, self.real_streetviews
+        )
+        cycled_simu_loss_value = self.cycle_loss(
+            self.cycled_simulated, self.real_simulated
+        )
 
-        loss_value: Tensor = (fooling_strt_loss_value + fooling_simu_loss_value + cycled_strt_loss_value + cycled_simu_loss_value)
+        loss_value: Tensor = (
+            fooling_strt_loss_value
+            + fooling_simu_loss_value
+            + cycled_strt_loss_value
+            + cycled_simu_loss_value
+        )
 
         if not only_compute_loss:
             loss_value.backward()
 
-        self.loss_values["generator"]["fooling_strt_loss_value"] = fooling_strt_loss_value
-        self.loss_values["generator"]["fooling_simu_loss_value"] = fooling_simu_loss_value
+        self.loss_values["generator"][
+            "fooling_strt_loss_value"
+        ] = fooling_strt_loss_value
+        self.loss_values["generator"][
+            "fooling_simu_loss_value"
+        ] = fooling_simu_loss_value
         self.loss_values["generator"]["cycled_strt_loss_value"] = cycled_strt_loss_value
         self.loss_values["generator"]["cycled_simu_loss_value"] = cycled_simu_loss_value
         self.loss_values["generator"]["loss_value"] = loss_value
