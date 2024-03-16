@@ -1,16 +1,19 @@
-from typing import Union, Any
-from pathlib import Path
 import json
+from collections.abc import Mapping
+from pathlib import Path
+from typing import Any
 
 import torch
-from torch import Tensor
-from ignite.metrics import Metric, Average
 from ignite.exceptions import NotComputableError
+from ignite.metrics import Average, Metric
+from torch import Tensor
 
 
 class MetricLogger:
-    def __init__(self, save_file: Path, metrics: dict[str, Metric], device: torch.device) -> None:
-        self.metrics = metrics
+    def __init__(
+        self, save_file: Path, metrics: Mapping[str, Metric], device: torch.device
+    ) -> None:
+        self.metrics: dict[str, Metric] = dict(metrics)
 
         self.metres: dict[str, list] = {}
         for name in self.metrics.keys():
@@ -36,7 +39,7 @@ class MetricLogger:
         self.number_of_steps += 1
         json.dump(self.metres, self.save_file.open(mode="w"))
 
-    def _append(self, name: str, value: Union[float, int, Tensor]):
+    def _append(self, name: str, value: float | int | Tensor):
         if name not in self.metres:
             self.metres[name] = [None] * self.number_of_steps
 
