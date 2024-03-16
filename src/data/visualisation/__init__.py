@@ -1,14 +1,16 @@
-from torch import Tensor
 import numpy as np
+from torch import Tensor
 
-from .utils import plot_sim, plot_streetview_with_discrimination
 from src.data.transformation import toNumpy
+from src.data.visualisation.utils import plot_sim, plot_streetview_with_discrimination
+from src.data.visualisation.visualisation import Visualisation
+
+__all__ = ["plot_sim", "plot_streetview_with_discrimination", "Visualisation"]
 
 
 def batch_to_numpy(batch: Tensor) -> list[np.ndarray]:
     """
-    Convert a batch of images to a list of nd.array, scaled back to
-    range [0, 255].
+    Convert a batch of images to a list of nd.array.
     """
     batch_np = toNumpy()(batch)
 
@@ -19,7 +21,9 @@ def batch_to_numpy(batch: Tensor) -> list[np.ndarray]:
     return np_images
 
 
-def multichannels_to_individuals(img: np.ndarray, passes_channels: dict[str, int]) -> list[np.ndarray]:
+def multichannels_to_individuals(
+    img: np.ndarray, passes_channels: dict[str, int]
+) -> list[np.ndarray]:
     """
     transform a multichannel image to individual, less than 3 channels
     images.
@@ -41,7 +45,7 @@ def multichannels_to_individuals(img: np.ndarray, passes_channels: dict[str, int
 
     individual_images = []
     for _, pass_channels in passes_channels.items():
-        individual_images.append(img[:, :, i_channel: i_channel + pass_channels])
+        individual_images.append(img[:, :, i_channel : i_channel + pass_channels])
 
         i_channel += pass_channels
 
