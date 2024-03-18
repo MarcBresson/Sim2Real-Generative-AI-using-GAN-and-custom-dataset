@@ -2,6 +2,7 @@
 Copyright (C) 2019 NVIDIA Corporation.  All rights reserved.
 Licensed under the CC BY-NC-SA 4.0 license (https://creativecommons.org/licenses/by-nc-sa/4.0/legalcode).
 """
+
 from typing import Literal
 
 import torch
@@ -9,7 +10,7 @@ from torch import nn
 from torch.nn import functional as F
 from torch.nn.utils.parametrizations import spectral_norm
 
-from config import OptimizerKwargs
+from config import OptimizerKwargs, get_config_to_dict
 
 
 class SPADEGenerator(nn.Module):
@@ -25,7 +26,7 @@ class SPADEGenerator(nn.Module):
         use_vae: bool = False,
         device: torch.device = torch.device("cuda:0"),
         dtype: torch.dtype = torch.float32,
-        optimizer_kwargs: OptimizerKwargs = OptimizerKwargs(),
+        optimizer_config: OptimizerKwargs | None = None,
     ):
         "If 'more', adds upsampling layer between the two middle resnet blocks. If 'most', also add one more upsampling + resnet layer at the end of the generator"
 
@@ -48,21 +49,37 @@ class SPADEGenerator(nn.Module):
             # downsampled segmentation map instead of random z
             self.fc = nn.Conv2d(self.input_nc, 16 * n_filters, 3, padding=1)
 
-        self.head_0 = SPADEResnetBlock(16 * n_filters, 16 * n_filters, input_nc=input_nc)
+        self.head_0 = SPADEResnetBlock(
+            16 * n_filters, 16 * n_filters, input_nc=input_nc
+        )
 
-        self.G_middle_0 = SPADEResnetBlock(16 * n_filters, 16 * n_filters, input_nc=input_nc)
-        self.G_middle_1 = SPADEResnetBlock(16 * n_filters, 16 * n_filters, input_nc=input_nc)
+        self.G_middle_0 = SPADEResnetBlock(
+            16 * n_filters, 16 * n_filters, input_nc=input_nc
+        )
+        self.G_middle_1 = SPADEResnetBlock(
+            16 * n_filters, 16 * n_filters, input_nc=input_nc
+        )
 
-        self.up_0 = SPADEResnetBlock(16 * n_filters, 8 * n_filters, input_nc=input_nc)  # has learned shortcut
-        self.up_1 = SPADEResnetBlock(8 * n_filters, 4 * n_filters, input_nc=input_nc)   # has learned shortcut
-        self.up_2 = SPADEResnetBlock(4 * n_filters, 2 * n_filters, input_nc=input_nc)   # has learned shortcut
-        self.up_3 = SPADEResnetBlock(2 * n_filters, 1 * n_filters, input_nc=input_nc)   # has learned shortcut
+        self.up_0 = SPADEResnetBlock(
+            16 * n_filters, 8 * n_filters, input_nc=input_nc
+        )  # has learned shortcut
+        self.up_1 = SPADEResnetBlock(
+            8 * n_filters, 4 * n_filters, input_nc=input_nc
+        )  # has learned shortcut
+        self.up_2 = SPADEResnetBlock(
+            4 * n_filters, 2 * n_filters, input_nc=input_nc
+        )  # has learned shortcut
+        self.up_3 = SPADEResnetBlock(
+            2 * n_filters, 1 * n_filters, input_nc=input_nc
+        )  # has learned shortcut
 
         final_nc = n_filters
 
         self.num_upsampling_layers = num_upsampling_layers
-        if num_upsampling_layers == 'most':
-            self.up_4 = SPADEResnetBlock(1 * n_filters, n_filters // 2, input_nc=input_nc)
+        if num_upsampling_layers == "most":
+            self.up_4 = SPADEResnetBlock(
+                1 * n_filters, n_filters // 2, input_nc=input_nc
+            )
             final_nc = n_filters // 2
 
         self.conv_img = nn.Conv2d(final_nc, output_nc, 3, padding=1)
@@ -72,18 +89,21 @@ class SPADEGenerator(nn.Module):
         self.to(device=device, dtype=dtype)
 
         # https://machinelearningmastery.com/adam-optimization-algorithm-for-deep-learning/
-        self.optimizer = torch.optim.Adam(self.parameters(), **optimizer_kwargs.model_dump())
+        optimizer_kwargs = get_config_to_dict(optimizer_config)
+        self.optimizer = torch.optim.Adam(self.parameters(), **optimizer_kwargs)
 
     def compute_latent_vector_size(self):
-        if self.num_upsampling_layers == 'normal':
+        if self.num_upsampling_layers == "normal":
             num_up_layers = 5
-        elif self.num_upsampling_layers == 'more':
+        elif self.num_upsampling_layers == "more":
             num_up_layers = 6
-        elif self.num_upsampling_layers == 'most':
+        elif self.num_upsampling_layers == "most":
             num_up_layers = 7
         else:
-            raise ValueError('self.num_upsampling_layers [%s] not recognized' %
-                             self.num_upsampling_layers)
+            raise ValueError(
+                "self.num_upsampling_layers [%s] not recognized"
+                % self.num_upsampling_layers
+            )
 
         sw = self.input_size // (2**num_up_layers)
         sh = round(sw / self.aspect_ratio)
@@ -96,7 +116,12 @@ class SPADEGenerator(nn.Module):
         if self.use_vae:
             # we sample z from unit normal and reshape the tensor
             if z is None:
-                z = torch.randn(input.size(0), self.z_dim, dtype=torch.float32, device=input.get_device())
+                z = torch.randn(
+                    input.size(0),
+                    self.z_dim,
+                    dtype=torch.float32,
+                    device=input.get_device(),
+                )
             x = self.fc(z)
             x = x.view(-1, 16 * self.n_filters, self.sh, self.sw)
         else:
@@ -109,8 +134,7 @@ class SPADEGenerator(nn.Module):
         x = self.up(x)
         x = self.G_middle_0(x, seg)
 
-        if self.num_upsampling_layers == 'more' or \
-           self.num_upsampling_layers == 'most':
+        if self.num_upsampling_layers == "more" or self.num_upsampling_layers == "most":
             x = self.up(x)
 
         x = self.G_middle_1(x, seg)
@@ -124,7 +148,7 @@ class SPADEGenerator(nn.Module):
         x = self.up(x)
         x = self.up_3(x, seg)
 
-        if self.num_upsampling_layers == 'most':
+        if self.num_upsampling_layers == "most":
             x = self.up(x)
             x = self.up_4(x, seg)
 
@@ -137,7 +161,7 @@ class SPADEResnetBlock(nn.Module):
     def __init__(self, fin, fout, input_nc, norm_G: str = "spectralinstance"):
         super().__init__()
         # Attributes
-        self.learned_shortcut = (fin != fout)
+        self.learned_shortcut = fin != fout
         fmiddle = min(fin, fout)
 
         # create conv layers
@@ -147,14 +171,14 @@ class SPADEResnetBlock(nn.Module):
             self.conv_s = nn.Conv2d(fin, fout, kernel_size=1, bias=False)
 
         # apply spectral norm if specified
-        if 'spectral' in norm_G:
+        if "spectral" in norm_G:
             self.conv_0 = spectral_norm(self.conv_0)
             self.conv_1 = spectral_norm(self.conv_1)
             if self.learned_shortcut:
                 self.conv_s = spectral_norm(self.conv_s)
 
         # define normalization layers
-        spade_config_str = norm_G.replace('spectral', '')
+        spade_config_str = norm_G.replace("spectral", "")
         self.norm_0 = SPADE(fin, input_nc, norm_type=spade_config_str)
         self.norm_1 = SPADE(fmiddle, input_nc, norm_type=spade_config_str)
         if self.learned_shortcut:
@@ -183,35 +207,35 @@ class SPADEResnetBlock(nn.Module):
         return F.leaky_relu(x, 2e-1)
 
 
-def get_nonspade_norm_layer(norm_type='instance'):
+def get_nonspade_norm_layer(norm_type="instance"):
     # helper function to get # output channels of the previous layer
     def get_out_channel(layer):
-        if hasattr(layer, 'out_channels'):
-            return getattr(layer, 'out_channels')
+        if hasattr(layer, "out_channels"):
+            return getattr(layer, "out_channels")
         return layer.weight.size(0)
 
     # this function will be returned
     def add_norm_layer(layer):
         nonlocal norm_type
-        if norm_type.startswith('spectral'):
+        if norm_type.startswith("spectral"):
             layer = spectral_norm(layer)
-            subnorm_type = norm_type[len('spectral'):]
+            subnorm_type = norm_type[len("spectral") :]
 
-        if subnorm_type == 'none' or len(subnorm_type) == 0:
+        if subnorm_type == "none" or len(subnorm_type) == 0:
             return layer
 
         # remove bias in the previous layer, which is meaningless
         # since it has no effect after normalization
-        if getattr(layer, 'bias', None) is not None:
-            delattr(layer, 'bias')
-            layer.register_parameter('bias', None)
+        if getattr(layer, "bias", None) is not None:
+            delattr(layer, "bias")
+            layer.register_parameter("bias", None)
 
-        if subnorm_type == 'batch':
+        if subnorm_type == "batch":
             norm_layer = nn.BatchNorm2d(get_out_channel(layer), affine=True)
-        elif subnorm_type == 'instance':
+        elif subnorm_type == "instance":
             norm_layer = nn.InstanceNorm2d(get_out_channel(layer), affine=False)
         else:
-            raise ValueError('normalization layer %s is not recognized' % subnorm_type)
+            raise ValueError("normalization layer %s is not recognized" % subnorm_type)
 
         return nn.Sequential(layer, norm_layer)
 
@@ -232,26 +256,30 @@ def get_nonspade_norm_layer(norm_type='instance'):
 # |norm_nc|: the #channels of the normalized activations, hence the output dim of SPADE
 # |label_nc|: the #channels of the input semantic map, hence the input dim of SPADE
 class SPADE(nn.Module):
-    def __init__(self, norm_nc, label_nc, kernel_size: int = 3, norm_type: str = "instance"):
+    def __init__(
+        self, norm_nc, label_nc, kernel_size: int = 3, norm_type: str = "instance"
+    ):
         super().__init__()
 
-        if norm_type == 'instance':
+        if norm_type == "instance":
             self.param_free_norm = nn.InstanceNorm2d(norm_nc, affine=False)
-        elif norm_type == 'batch':
+        elif norm_type == "batch":
             self.param_free_norm = nn.BatchNorm2d(norm_nc, affine=False)
         else:
-            raise ValueError('%s is not a recognized param-free norm type in SPADE'
-                             % norm_type)
+            raise ValueError(
+                "%s is not a recognized param-free norm type in SPADE" % norm_type
+            )
 
         # The dimension of the intermediate embedding space. Yes, hardcoded.
         nhidden = 128
 
         pw = kernel_size // 2
         self.mlp_shared = nn.Sequential(
-            nn.Conv2d(label_nc, nhidden, kernel_size=kernel_size, padding=pw),
-            nn.ReLU()
+            nn.Conv2d(label_nc, nhidden, kernel_size=kernel_size, padding=pw), nn.ReLU()
         )
-        self.mlp_gamma = nn.Conv2d(nhidden, norm_nc, kernel_size=kernel_size, padding=pw)
+        self.mlp_gamma = nn.Conv2d(
+            nhidden, norm_nc, kernel_size=kernel_size, padding=pw
+        )
         self.mlp_beta = nn.Conv2d(nhidden, norm_nc, kernel_size=kernel_size, padding=pw)
 
     def forward(self, x, segmap):
@@ -260,7 +288,7 @@ class SPADE(nn.Module):
         normalized = self.param_free_norm(x)
 
         # Part 2. produce scaling and bias conditioned on semantic map
-        segmap = F.interpolate(segmap, size=x.size()[2:], mode='nearest')
+        segmap = F.interpolate(segmap, size=x.size()[2:], mode="nearest")
         actv = self.mlp_shared(segmap)
         gamma = self.mlp_gamma(actv)
         beta = self.mlp_beta(actv)

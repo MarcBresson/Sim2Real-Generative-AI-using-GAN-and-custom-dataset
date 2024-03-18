@@ -1,7 +1,7 @@
 import torch
 from torch import Tensor, nn
 
-from config import OptimizerKwargs
+from config import OptimizerKwargs, get_config_to_dict
 
 
 class PatchGAN(nn.Module):
@@ -15,7 +15,7 @@ class PatchGAN(nn.Module):
         norm_layer=nn.BatchNorm2d,
         device: torch.device = torch.device("cuda:0"),
         dtype: torch.dtype = torch.float32,
-        optimizer_kwargs: OptimizerKwargs = OptimizerKwargs(),
+        optimizer_config: OptimizerKwargs | None = None,
     ):
         """
         Construct a PatchGAN discriminator
@@ -37,23 +37,32 @@ class PatchGAN(nn.Module):
         self.model.to(device=device, dtype=dtype)
 
         # https://machinelearningmastery.com/adam-optimization-algorithm-for-deep-learning/
-        self.optimizer = torch.optim.Adam(self.model.parameters(), **optimizer_kwargs.model_dump())
+        optimizer_kwargs = get_config_to_dict(optimizer_config)
+        self.optimizer = torch.optim.Adam(self.model.parameters(), **optimizer_kwargs)
 
-    def build(self, output_nc: int, n_filters: int = 64, n_layers: int = 3, norm_layer=nn.BatchNorm2d):
+    def build(
+        self,
+        output_nc: int,
+        n_filters: int = 64,
+        n_layers: int = 3,
+        norm_layer=nn.BatchNorm2d,
+    ):
         """build the discriminator"""
         use_bias = True
-        if isinstance(norm_layer, nn.BatchNorm2d):  # batchnorm contains affine parametres
+        if isinstance(
+            norm_layer, nn.BatchNorm2d
+        ):  # batchnorm contains affine parametres
             use_bias = False
 
         sequence = [
             nn.Conv2d(output_nc, n_filters, kernel_size=4, stride=2, padding=1),
-            nn.LeakyReLU(0.2, True)
+            nn.LeakyReLU(0.2, True),
         ]
 
         in_nbr_filter = n_filters
 
         for n in range(1, n_layers + 1):  # gradually increase the number of filters
-            nbr_filt_mult = min(2 ** n, 8)
+            nbr_filt_mult = min(2**n, 8)
             out_nbr_filter = n_filters * nbr_filt_mult
 
             if n == n_layers:
@@ -62,14 +71,23 @@ class PatchGAN(nn.Module):
                 stride = 2
 
             sequence += [
-                nn.Conv2d(in_nbr_filter, out_nbr_filter, kernel_size=4, stride=stride, padding=1, bias=use_bias),
+                nn.Conv2d(
+                    in_nbr_filter,
+                    out_nbr_filter,
+                    kernel_size=4,
+                    stride=stride,
+                    padding=1,
+                    bias=use_bias,
+                ),
                 norm_layer(out_nbr_filter),
-                nn.LeakyReLU(0.2, True)
+                nn.LeakyReLU(0.2, True),
             ]
 
             in_nbr_filter = n_filters * nbr_filt_mult
 
-        sequence += [nn.Conv2d(in_nbr_filter, 1, kernel_size=4, stride=1, padding=1)]  # output 1 channel prediction map
+        sequence += [
+            nn.Conv2d(in_nbr_filter, 1, kernel_size=4, stride=1, padding=1)
+        ]  # output 1 channel prediction map
 
         return nn.Sequential(*sequence)
 
