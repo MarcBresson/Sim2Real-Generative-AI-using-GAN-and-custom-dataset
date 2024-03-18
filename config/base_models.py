@@ -33,7 +33,7 @@ class OptimizerKwargs(BaseModel):
     betas: tuple[float, float] = (0.0, 0.999)
 
 
-class Generator(BaseModel):
+class GeneratorConfig(BaseModel):
     num_upsampling_layers: str
     n_filters: int
     input_size: int
@@ -41,7 +41,7 @@ class Generator(BaseModel):
     optimizer_kwargs: OptimizerKwargs
 
 
-class Discriminator(BaseModel):
+class DiscriminatorConfig(BaseModel):
     n_layers: int
     n_filters: int
     lr: float
@@ -49,8 +49,8 @@ class Discriminator(BaseModel):
 
 
 class Network(BaseModel):
-    generator: Generator
-    discriminator: Discriminator
+    generator: GeneratorConfig
+    discriminator: DiscriminatorConfig
 
 
 class Dataloader(BaseModel):

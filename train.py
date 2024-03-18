@@ -188,8 +188,8 @@ def main():
         dtype=cfg.data.dtype,
         input_channels=cfg.data.input_channels,
         output_channels=cfg.data.output_channels,
-        generator_kwargs=dict(cfg.network.generator),
-        discriminator_kwargs=dict(cfg.network.discriminator),
+        generator_config=cfg.network.generator,
+        discriminator_config=cfg.network.discriminator,
     )
     init_weights(model, init_type="xavier", gain=0.2)
 

@@ -1,37 +1,49 @@
-from typing import Any, Union
 from pathlib import Path
+from typing import Any
 
 import torch
-from torch import Tensor
-from torch import nn
+from torch import Tensor, nn
 
+from config import DiscriminatorConfig, GeneratorConfig, get_config_to_dict
+from src.eval.gan_loss import HingeLoss
 from src.models.discriminator_patchgan import PatchGAN
 from src.models.generator_spade import SPADEGenerator
-from src.eval.gan_loss import HingeLoss, BCEWithLogitsLoss
 
 
 class GAN(nn.Module):
+    real_streetviews: Tensor
+    real_simulated: Tensor
+    fake_streetviews: Tensor
+    discriminated_strt_real: Tensor
+    discriminated_strt_fake: Tensor
+
     def __init__(
         self,
-        dtype: Union[torch.dtype, str] = "float32",
+        dtype: torch.dtype | str = "float32",
         input_channels: int = 7,
         output_channels: int = 3,
         device: torch.device = torch.device("cuda:0"),
-        generator_kwargs: Union[dict[str, Any], None] = None,
-        discriminator_kwargs: Union[dict[str, Any], None] = None
+        generator_config: GeneratorConfig | None = None,
+        discriminator_config: DiscriminatorConfig | None = None,
     ) -> None:
         super().__init__()
 
         if isinstance(dtype, str):
             _dtype: torch.dtype = getattr(torch, dtype)
 
-        if generator_kwargs is None:
-            generator_kwargs = {}
-        if discriminator_kwargs is None:
-            discriminator_kwargs = {}
+        generator_kwargs = get_config_to_dict(generator_config)
+        discriminator_kwargs = get_config_to_dict(discriminator_config)
 
-        self.generator = SPADEGenerator(input_channels, output_channels, device=device, dtype=_dtype, **generator_kwargs)
-        self.discriminator = PatchGAN(output_channels, device=device, dtype=_dtype, **discriminator_kwargs)
+        self.generator = SPADEGenerator(
+            input_channels,
+            output_channels,
+            device=device,
+            dtype=_dtype,
+            **generator_kwargs,
+        )
+        self.discriminator = PatchGAN(
+            output_channels, device=device, dtype=_dtype, **discriminator_kwargs
+        )
 
         self.fooling_loss = HingeLoss()
         self.gen_loss = nn.L1Loss()
@@ -57,7 +69,9 @@ class GAN(nn.Module):
 
     def forward_D(self):
         self.discriminated_strt_real = self.discriminator(self.real_streetviews)
-        self.discriminated_strt_fake = self.discriminator(self.fake_streetviews.detach())
+        self.discriminated_strt_fake = self.discriminator(
+            self.fake_streetviews.detach()
+        )
 
     def backward_G(self, only_compute_loss: bool = False):
         # we want to optimize the generator so that the discriminator is wrong more often.
@@ -67,7 +81,7 @@ class GAN(nn.Module):
 
         gen_loss_value = self.gen_loss(self.fake_streetviews, self.real_streetviews)
 
-        loss_value: Tensor = (gen_loss_value + fooling_loss_value)
+        loss_value: Tensor = gen_loss_value + fooling_loss_value
 
         if not only_compute_loss:
             loss_value.backward()
