@@ -15,8 +15,8 @@ model = GAN(
     dtype=cfg.data.dtype,
     input_channels=cfg.data.input_channels,
     output_channels=cfg.data.output_channels,
-    generator_kwargs=dict(cfg.network.generator),
-    discriminator_kwargs=dict(cfg.network.discriminator),
+    generator_config=cfg.network.generator,
+    discriminator_config=cfg.network.discriminator,
 )
 
 model.load_state_dict(torch.load(cfg.inference.weights_path))
@@ -31,7 +31,7 @@ transform = Compose(
 )
 
 dataset = InferenceDataset(cfg.inference.in_data_path)
-dataloader = DataLoader(dataset, batch_size=2)
+dataloader = DataLoader(dataset, batch_size=cfg.inference.dataloader.batch_size)
 
 sample_counter = 0
 for batch in dataloader:

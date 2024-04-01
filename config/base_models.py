@@ -2,14 +2,9 @@ from pathlib import Path
 from typing import Annotated, TypeAlias, overload
 
 import yaml  # type: ignore[import-untyped]
-
-try:
-    from typing import Self
-except ImportError:
-    from typing import Self
-
 from pydantic import BaseModel, ConfigDict, DirectoryPath, FilePath
 from pydantic.functional_validators import AfterValidator
+from typing_extensions import Self
 
 
 def new_path_and_parents(path: Path) -> Path:
@@ -82,6 +77,7 @@ class Inference(BaseModel):
     in_data_path: DirectoryPath
     out_data_path: NewPathAndParents
     weights_path: FilePath
+    dataloader: Dataloader
 
 
 class Config(BaseModel):

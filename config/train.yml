@@ -2,6 +2,7 @@ data:
   input_channels: 7
   output_channels: 3
   dtype: float32
+
 network:
   generator:
     num_upsampling_layers: "most"
@@ -14,6 +15,7 @@ network:
     n_filters: 64
     optimizer_kwargs:
       lr: 1e-3
+
 train:
   in_data_path: data/
   out_data_path: data/sim2real
@@ -26,7 +28,10 @@ train:
     every_nth_epoch: 1
   dataloader:
     batch_size: 4
+
 inference:
   in_data_path: data/inference/numpy
   out_data_path: data/inference/generated
   weights_path: data/train_big_spade_working/GAN_latest_epoch.pth
+  dataloader:
+    batch_size: 2
