@@ -12,5 +12,5 @@ def get_config_to_dict(conf: BaseModel | None) -> dict[str, Any]:
 
     if isinstance(conf, BaseModel):
         return dict(conf)
-
-    return conf
+    else:
+        raise ValueError(f"config must be a pydantic base model. Got {type(conf)=}")

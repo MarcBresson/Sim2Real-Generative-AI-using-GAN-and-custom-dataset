@@ -51,6 +51,10 @@ class GAN(nn.Module):
         self.init_loss_values()
 
     def init_loss_values(self):
+        """
+        loss_values holds only the loss values of the last samples on
+        which the backward method has been called on.
+        """
         self.loss_values: dict[str, Any] = {}
         self.loss_values["generator"] = {}
         self.loss_values["discriminator"] = {}

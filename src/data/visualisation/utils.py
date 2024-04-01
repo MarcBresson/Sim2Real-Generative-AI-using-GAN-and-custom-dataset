@@ -1,14 +1,17 @@
-from typing import Union
-
-from matplotlib import pyplot as plt
-from matplotlib.figure import Figure
-from matplotlib.axes import Axes
-from matplotlib.patches import Patch
 import matplotlib as mpl
 import numpy as np
+from matplotlib import pyplot as plt
+from matplotlib.axes import Axes
+from matplotlib.figure import Figure
+from matplotlib.patches import Patch
 
 
-def plot_sim(images: list[np.ndarray], pass_names: list[str], suptitle: Union[str, None] = None, horizontal: bool = False) -> Figure:
+def plot_sim(
+    images: list[np.ndarray],
+    pass_names: list[str],
+    suptitle: str | None = None,
+    horizontal: bool = False,
+) -> Figure:
     """
     plot a simulated image with all its channels.
 
@@ -39,7 +42,13 @@ def plot_sim(images: list[np.ndarray], pass_names: list[str], suptitle: Union[st
     return fig
 
 
-def plot_streetview_with_discrimination(streetview: np.ndarray, discrimination: np.ndarray, target: np.ndarray, suptitle: Union[str, None] = None, horizontal: bool = False) -> Figure:
+def plot_streetview_with_discrimination(
+    streetview: np.ndarray,
+    discrimination: np.ndarray,
+    target: np.ndarray,
+    suptitle: str | None = None,
+    horizontal: bool = False,
+) -> Figure:
     """
     plot the result of the GAN with the generated sample, the discrimination and the target side by side.
 
@@ -73,7 +82,9 @@ def plot_streetview_with_discrimination(streetview: np.ndarray, discrimination: 
     return fig
 
 
-def get_fig_axs(dim_0: int = 3, dim_1: int = 1, horizontal: bool = False) -> tuple[Figure, list[Axes]]:
+def get_fig_axs(
+    dim_0: int = 3, dim_1: int = 1, horizontal: bool = False
+) -> tuple[Figure, list[Axes]]:
     """
     get the Axes of a figure in a 1D array.
 
@@ -94,7 +105,7 @@ def get_fig_axs(dim_0: int = 3, dim_1: int = 1, horizontal: bool = False) -> tup
     if horizontal:
         dim_0, dim_1 = dim_1, dim_0
 
-    axs: Union[Axes, np.ndarray]
+    axs: Axes | np.ndarray
     fig, axs = plt.subplots(dim_0, dim_1)
 
     axs_1d: list[Axes] = []
@@ -107,7 +118,7 @@ def get_fig_axs(dim_0: int = 3, dim_1: int = 1, horizontal: bool = False) -> tup
     return fig, axs_1d
 
 
-def show_rgb_image(ax: Axes, image: np.ndarray, title: Union[str, None] = None):
+def show_rgb_image(ax: Axes, image: np.ndarray, title: str | None = None):
     """
     display an image onto an axe.
 
@@ -124,12 +135,17 @@ def show_rgb_image(ax: Axes, image: np.ndarray, title: Union[str, None] = None):
 
     if title is not None:
         ax.set_xlabel(title)
-        ax.xaxis.set_label_position('top')
+        ax.xaxis.set_label_position("top")
 
     remove_border(ax)
 
 
-def show_discrimination(ax: Axes, image: np.ndarray, title: Union[str, None] = None, display_legend: bool = False):
+def show_discrimination(
+    ax: Axes,
+    image: np.ndarray,
+    title: str | None = None,
+    display_legend: bool = False,
+):
     """
     display the discriminator output onto an axe.
 
@@ -150,11 +166,13 @@ def show_discrimination(ax: Axes, image: np.ndarray, title: Union[str, None] = N
 
     if title is not None:
         ax.set_xlabel(title)
-        ax.xaxis.set_label_position('top')
+        ax.xaxis.set_label_position("top")
 
     if display_legend:
-        legend = (Patch(facecolor=cmap(0), label='Fake'),
-                  Patch(facecolor=cmap(1), label='Real'))
+        legend = (
+            Patch(facecolor=cmap(0), label="Fake"),
+            Patch(facecolor=cmap(1), label="Real"),
+        )
         ax.legend(handles=legend, prop={"size": 6})
 
     remove_border(ax)
@@ -169,10 +187,10 @@ def remove_border(ax: Axes):
     ax : Axes
         the Axe to remove borders from.
     """
-    ax.spines['top'].set_visible(False)
-    ax.spines['bottom'].set_visible(False)
-    ax.spines['right'].set_visible(False)
-    ax.spines['left'].set_visible(False)
+    ax.spines["top"].set_visible(False)
+    ax.spines["bottom"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    ax.spines["left"].set_visible(False)
 
     # remove ticks but let axis labels
     ax.set_xticks([])
