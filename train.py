@@ -27,11 +27,11 @@ logging.getLogger().setLevel(logging.INFO)
 
 def train(
     dataloader_train: DataLoader,
-    batch_transform,
+    batch_transform: Compose,
     model: GAN,
     metric_logger: MetricLogger,
 ):
-    for _, batch in enumerate(dataloader_train):
+    for batch in dataloader_train:
         batch = batch_transform(batch)
 
         model.fit_sample(batch)
@@ -43,9 +43,12 @@ def train(
 
 
 def validate(
-    dataloader_val: DataLoader, batch_transform, model: GAN, metric_logger: MetricLogger
+    dataloader_val: DataLoader,
+    batch_transform: Compose,
+    model: GAN,
+    metric_logger: MetricLogger,
 ):
-    for _, batch in enumerate(dataloader_val):
+    for batch in dataloader_val:
         batch = batch_transform(batch)
 
         model.test(batch)
@@ -69,7 +72,7 @@ def run(
     for epoch in tqdm(range(n_epoch)):
         train(dataloader_train, batch_transform, model, metric_logger)
         validate(dataloader_val, batch_transform, model, metric_logger)
-        visualisation.visualize(model, epoch)
+        visualisation.step(model, epoch)
 
         checkpointer.step(epoch, "epoch")
         metric_logger.step()

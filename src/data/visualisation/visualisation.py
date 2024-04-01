@@ -23,6 +23,7 @@ class Visualisation:
     subset: Subset
     transform: Compose
     out_directory: Path
+    every_nth_epoch: int = 1
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -42,7 +43,11 @@ class Visualisation:
             fig.savefig(save_path, dpi=300, bbox_inches="tight", pad_inches=0.1)
             plt.close()
 
-    def visualize(self, model: GAN, epoch: int):
+    def step(self, model: GAN, epoch: int):
+        # starting from epoch 1, we visualize once every nth epoch
+        if (epoch - 1) % self.every_nth_epoch != 0:
+            return
+
         for i_sample, torch_sim_batch in enumerate(self.transformed_samples()):
             model.test(torch_sim_batch)
 
